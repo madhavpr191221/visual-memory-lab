@@ -8,3 +8,9 @@ wheels/
 
 # Virtual environments
 .venv
+
+# Generated trajectories and local outputs
+data/*
+!data/.gitkeep
+outputs/*
+!outputs/.gitkeep
