@@ -103,6 +103,246 @@ image dimensions, file paths, and record counts.
 JSON Lines is a text format containing one JSON object per line. In
 `observations.jsonl`, every line is one observation.
 
+## Inspection route: a real-world explanation
+
+The most important distinction is that the agent is not a frame.
+
+- The **agent** is the entity moving through the environment. It could represent
+  a human technician or a maintenance robot.
+- A **frame** is one image captured from the agent's current point of view.
+- The **objects** belong to the environment. A frame contains pixels representing
+  whichever objects the agent can currently see.
+
+The real-world analogy is:
+
+```text
+person or robot       = agent
+photograph            = frame
+factory               = environment
+valve, pump, or tool  = object
+one inspection visit  = episode
+```
+
+### The factory scenario
+
+Imagine a maintenance technician inspecting a factory every Monday. The factory
+contains two equipment rooms connected by a corridor. Inside the rooms are
+valves, pumps, gauges, toolboxes, and several pieces of equipment that look
+similar.
+
+The technician carries a body camera or phone. The camera records what is in
+front of the technician as they walk and turn.
+
+### Beginning an episode
+
+One complete Monday inspection is an episode.
+
+The technician begins at a known entrance:
+
+```text
+Episode begins
+Technician enters Room A
+Camera starts recording
+```
+
+In MiniGrid, this corresponds to resetting the environment and placing the agent
+at position `(2, 4)`, facing east.
+
+### The inspection checklist
+
+The technician follows a checklist such as:
+
+1. Walk to the middle of Room A.
+2. Look toward the equipment on the north wall.
+3. Move closer to the far side of Room A.
+4. Look toward the equipment on the south wall.
+5. Walk through the corridor.
+6. Inspect the north side of Room B.
+7. Inspect the south side of Room B.
+8. Walk back toward the corridor.
+
+That checklist is the inspection route.
+
+An inspection route is more than a path from the entrance to the exit. It also
+specifies where the technician should stop and which direction they should look.
+
+For example:
+
+```text
+Checkpoint 1
+Stand near the center of Room A
+Face the north wall
+
+Checkpoint 2
+Stand near the doorway
+Face the south wall
+
+Checkpoint 3
+Stand beside the pump in Room B
+Face the pressure gauge
+```
+
+In the code, these checkpoints are represented by `PoseTarget` values. Each
+target contains a grid position and a viewing direction.
+
+### Why viewing direction matters
+
+Suppose the technician stands beside a pump.
+
+If they face east, the camera may capture the pump. If they turn west, the
+camera may capture the doorway. Their location has not changed, but the visual
+evidence is different.
+
+That is why a checkpoint specifies both:
+
+```text
+where to stand + which direction to look
+```
+
+In the simulator, turning left or right creates a new frame even though the
+agent remains in the same grid cell.
+
+### What the route is trying to accomplish
+
+The route provides reliable visual coverage. It is designed so the technician
+or agent sees:
+
+- every important object;
+- objects from more than one viewpoint;
+- both rooms;
+- the transition through the corridor;
+- moments when an object is visible;
+- moments when the same object is hidden.
+
+The agent is not currently deciding what to repair, looking for anomalies, or
+trying to find the fastest possible route. It is conducting a controlled visual
+survey.
+
+### What breadth-first search represents
+
+Suppose the checklist says:
+
+> Go from the pump in Room A to the pressure gauge in Room B.
+
+The inspection route identifies the next checkpoint. Breadth-first search finds
+a walkable path from the current checkpoint to that destination.
+
+```text
+current checkpoint
+    -> find a path that avoids walls and equipment
+    -> turn in the required direction
+    -> walk to the next checkpoint
+```
+
+In a real factory, this path could come from:
+
+- the technician's knowledge of the building;
+- a floor plan;
+- an indoor navigation system;
+- a robot's path planner.
+
+MiniGrid uses breadth-first search as a small, deterministic path planner.
+
+### What the camera records
+
+Imagine capturing an image whenever the technician:
+
+- takes a step;
+- turns;
+- reaches a checkpoint;
+- changes what they are looking at.
+
+Each image is stored with context:
+
+```text
+Time: Monday, 09:14
+Location: Room A, near pump 3
+Direction: South
+Previous action: Turned right
+Visible equipment: Blue valve, pressure gauge
+```
+
+The simulator produces a simplified version:
+
+```text
+Step: 8
+Position: (5, 4)
+Direction: South
+Previous action: Right
+Visible objects: Blue box, red-ball-a
+```
+
+The image and its metadata describe the same moment.
+
+### Repeating the inspection
+
+Imagine the technician performs the same inspection every Monday:
+
+```text
+Week 1: toolbox beside the pump
+Week 2: toolbox moved near the doorway
+Week 3: valve partly blocked by equipment
+Week 4: rust appears near the pressure gauge
+```
+
+Each weekly inspection is a separate episode. The route remains the same, but
+the scene may change.
+
+Seeds create controlled versions of these changes in MiniGrid. Objects can move
+between episodes, while the agent follows the same inspection route.
+
+```text
+same building
+same inspection route
+different scene arrangement
+different visit or episode
+```
+
+### Why use the same route every time
+
+A consistent route makes comparisons meaningful.
+
+If the technician photographs the same equipment from approximately the same
+viewpoints every week, the visual-memory system can later answer questions such
+as:
+
+> When did the blue toolbox move?
+
+> When was rust first visible?
+
+> Which inspection showed the valve being blocked?
+
+> Where was this object last seen?
+
+Without a consistent route, an object might be missing from the images simply
+because the technician never looked toward it. That is different from the
+object genuinely being absent.
+
+### Mapping the real world to this project
+
+| Real world | Phase 1 simulation |
+|---|---|
+| Factory | MiniGrid environment |
+| Technician or maintenance robot | Agent |
+| Weekly inspection | Episode |
+| Inspection checklist | Scripted route |
+| Inspection checkpoint | Pose target |
+| Walking | `forward` action |
+| Turning the body or camera | `left` or `right` action |
+| Camera image | Egocentric frame |
+| Location and camera direction | Agent pose |
+| Equipment | Red balls and blue box |
+| Inspection date and conditions | Episode seed |
+| Record of all equipment present | Scene manifest |
+| Complete inspection log | Trajectory |
+
+In plain language, the agent behaves like a technician walking the same
+inspection round through a facility, deliberately looking at important areas
+and saving every view with its location and context.
+
+Phase 1 builds this inspection-recording process. Later phases build the system
+that searches the records and decides which past observation is relevant.
+
 ## What each episode generates
 
 One episode uses one seed and one object arrangement. It generates:
