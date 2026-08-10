@@ -1,6 +1,6 @@
 [project]
 name = "visual-memory-lab"
-version = "0.1.0"
+version = "0.2.0"
 description = "A simulator-based research lab for task-relevant visual memory."
 readme = "README.md"
 requires-python = ">=3.13"
@@ -9,6 +9,8 @@ dependencies = [
     "minigrid>=3.1.0,<4",
     "numpy>=2.5.2",
     "pillow>=12.3.0,<13",
+    "torch>=2.7,<3",
+    "transformers>=5.9,<6",
 ]
 
 [project.scripts]
