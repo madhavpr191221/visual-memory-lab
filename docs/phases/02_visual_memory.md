@@ -100,6 +100,224 @@ Each result contains its rank, score, absolute image path, complete observation
 record, and nearby action context. The observation record supplies the episode,
 timestep, agent pose, visible objects, seed, and action.
 
+## Translation to a real maintenance inspection
+
+MiniGrid is not meant to look like a factory. It gives us a controlled version
+of the same memory problem a maintenance technician would face after recording
+many inspections over time.
+
+The project concepts translate as follows:
+
+| Visual Memory Lab | Real maintenance system |
+|---|---|
+| Episode | One inspection visit, shift, or date |
+| Agent | Technician carrying a camera |
+| Agent position | Technician's estimated location |
+| Agent direction | Direction the camera was facing |
+| Action | Technician's recent movement |
+| 56x56 observation | One camera snapshot |
+| Red ball or blue box | Valve, pump, panel, extinguisher, or another asset |
+| Visible-object metadata | Detected assets, maintenance tags, or annotated ground truth |
+| CLIP index | Searchable history of inspection images |
+| Episode filter | Search within one particular inspection |
+| Nearby actions | What happened immediately before and after the image |
+
+### Recording inspection rounds
+
+Imagine a technician inspecting the same factory once every week while wearing
+a body camera:
+
+```text
+episode-001 -> inspection on August 3
+episode-002 -> inspection on August 10
+episode-003 -> inspection on August 17
+```
+
+Each camera frame becomes one observation. A real record might look like this:
+
+```text
+observation: inspection-003:0142
+image:       blue valve beside a pipe
+location:    pump room, east wall
+direction:   north-east
+time:        10:43:18
+movement:    walking forward
+```
+
+The camera image is encoded and stored alongside this context. The result is a
+history that can be searched by its visual content instead of requiring the
+technician to remember an exact filename, timestamp, or inspection date.
+
+### Asking with text
+
+Several weeks later, the technician asks:
+
+> Where did I see the blue valve?
+
+CLIP places the text query in the same representation space as the stored
+images. Exact search then compares the query against every recorded frame. A
+real result list could look like this:
+
+```text
+1. inspection-003:0142
+   blue valve visible
+   pump room, east wall
+   August 17
+
+2. inspection-002:0137
+   blue valve visible
+   pump room, east wall
+   August 10
+
+3. inspection-001:0151
+   blue valve visible
+   pump room, east wall
+   August 3
+```
+
+This is the real-world equivalent of querying the current corpus with `a blue
+box`. In the Phase 2 acceptance run, all five top results for that query
+contained the blue box. The box stands in for a visually distinctive asset such
+as a blue valve housing.
+
+### Asking with a current photograph
+
+The technician can also photograph a component today and use that image as the
+query:
+
+```text
+current photograph
+        |
+        v
+search historical inspection memory
+        |
+        v
+earlier views of similar equipment
+```
+
+This can be more reliable than trying to write the perfect description. The
+system could respond:
+
+> This resembles an image captured during the August 10 inspection while you
+> were approaching the east side of the pump room.
+
+Our MiniGrid image query demonstrated the same behavior. A red-ball frame
+retrieved equivalent and nearby red-ball viewpoints from other episodes.
+
+### Restricting the search to one visit
+
+Sometimes the technician does not want to search the full history. An episode
+filter can restrict the candidates to one inspection before ranking them.
+
+This supports questions such as:
+
+- Where did I see this valve during last Monday's inspection?
+- Show me another angle from the same visit.
+- What did the equipment look like before I entered the next room?
+
+Without the filter, the question is closer to "When have I ever seen something
+like this?" With it, the question becomes "Where else did I see it during this
+particular inspection?"
+
+### Why the nearby actions are useful
+
+An isolated image may not explain how the technician reached that location.
+The previous, current, and next actions provide a small temporal window around
+the retrieved frame.
+
+```text
+10:43:16 - walking east through the pump room
+10:43:18 - camera records the blue valve
+10:43:20 - technician turns toward the pressure gauge
+```
+
+This changes the result from an unordered photograph into a small piece of the
+inspection sequence. A later real system could extend this context with a few
+seconds of video, spoken notes, tool use, sensor readings, or work-order events.
+
+### Why finding the first appearance of rust is harder
+
+The longer-term example asks:
+
+> When was rust first visible around the blue valve beside the pressure gauge?
+
+Phase 2 cannot answer that complete question yet. It can retrieve frames that
+look related to `blue valve`, `rusty valve`, or `pressure gauge`, but finding
+the first appearance requires a task-level procedure:
+
+1. retrieve frames containing the correct valve;
+2. distinguish it from similar valves elsewhere in the factory;
+3. determine whether rust is genuinely visible;
+4. order the relevant observations by inspection time;
+5. identify the earliest positive observation;
+6. verify that earlier observations do not already show rust.
+
+The phase boundary is therefore:
+
+```text
+Phase 2
+Retrieve visually related historical frames.
+
+Phase 3
+Measure whether the frames contain the correct event, asset, episode,
+time, and location.
+
+Phase 4
+Explain failures such as the wrong valve or confusion between rust,
+lighting, dirt, and a red warning label.
+```
+
+### What the red-ball failure means in a factory
+
+The Phase 2 query `a red ball` mostly retrieved observations without a ball.
+Manual inspection showed that the top-ranked empty views still contained the
+agent's small red triangular marker. CLIP recognized red content but did not
+reliably resolve the requested shape.
+
+A real system could make the same kind of mistake when asked for a red
+emergency valve. It might retrieve a red helmet, warning sticker, tool case,
+fire extinguisher, or status light. Visual similarity alone cannot prove that
+the correct object was retrieved.
+
+MiniGrid gives us simulator ground truth, so we know exactly whether a ball was
+visible. A factory benchmark would need comparable evidence from asset tags,
+equipment IDs, inspection forms, tracking, or manually reviewed queries.
+
+### What changes outside the simulator
+
+The main memory flow remains the same:
+
+```text
+camera observations
+        |
+        v
+visual encoder
+        |
+        v
+persistent historical index
+        |
+        v
+text or image query
+        |
+        v
+ranked evidence with time and location
+```
+
+A real deployment would replace or extend several inputs:
+
+- camera frames would be higher resolution;
+- episodes would use inspection IDs and real timestamps;
+- position could come from GPS, SLAM, indoor localization, or checkpoints;
+- asset identity could come from OCR, QR codes, detectors, tags, or tracking;
+- actions could come from video motion, inertial sensors, or workflow events;
+- results would likely include short video windows rather than single frames;
+- sensitive camera footage would require access controls and retention rules.
+
+The controlled experiment is therefore not pretending to be the complete
+factory system. It isolates its central research problem: after a technician
+has observed many similar places and objects, can the system retrieve the past
+observation that provides the evidence needed now?
+
 ## Commands
 
 Generate the Phase 1 corpus if it does not already exist:
