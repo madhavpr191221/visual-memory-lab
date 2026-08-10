@@ -77,5 +77,8 @@ Known limits:
   distinguishable;
 - no embeddings, retrieval, or task-level metrics exist yet.
 
-Phase exit decision: passed. Phase 1 is ready to merge after the final branch
-validation.
+Phase exit decision: passed. The phase branch was validated and merged into
+`main`.
+
+For a detailed explanation of the runtime path and the files produced by each
+episode, see [01_code_flow.md](01_code_flow.md).
