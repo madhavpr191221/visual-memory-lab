@@ -14,6 +14,8 @@ This project does not require a physical robot. All observations are generated l
 
 ## Phase 1 - Simulator and observation contract
 
+Status: implemented and merged.
+
 Use MiniGrid with Gymnasium to generate simple navigation trajectories.
 
 Each observation record contains:
@@ -38,6 +40,12 @@ The first environment will contain:
 Depth and point clouds remain future extensions, not part of the first version.
 
 ## Phase 2 - Visual memory
+
+Status: implemented and validated. The implementation uses the pinned
+`openai/clip-vit-base-patch32` checkpoint, a persistent NumPy artifact, and
+exact in-memory cosine search. See
+[`phases/02_visual_memory.md`](phases/02_visual_memory.md) for the contract and
+acceptance results.
 
 Build the simplest memory system:
 
@@ -140,9 +148,9 @@ Use a small `uv` layout:
 visual-memory-lab/
 |-- src/visual_memory_lab/
 |   |-- environment.py
+|   |-- encoder.py
 |   |-- observations.py
 |   |-- memory.py
-|   |-- retrieval.py
 |   |-- evaluation.py
 |   `-- cli.py
 |-- data/
@@ -165,12 +173,14 @@ Keep the first implementation small:
 - `minigrid`;
 - `gymnasium`;
 - `torch`;
-- `torchvision`;
 - `transformers`;
-- `faiss-cpu` or the existing FAISS GPU setup;
 - `numpy`;
 - `pillow`;
 - `opencv-python-headless` only if video export is needed.
+
+The Phase 2 corpus is small enough for exact NumPy search. FAISS or another
+compressed index should be added only after exact retrieval is understood and
+there is a scale-related reason to introduce it.
 
 Do not add LangChain, FastAPI, Qdrant, diffusion models, or video models in the first phase.
 

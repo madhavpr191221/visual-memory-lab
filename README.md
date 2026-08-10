@@ -61,19 +61,24 @@ Each case will show the query, the retrieved observation, the simulator ground t
 
 ## Current status
 
-Phase 1 is implemented. The repository can now generate reproducible MiniGrid
-inspection trajectories with:
+Phases 1 and 2 are implemented. The repository can generate reproducible
+MiniGrid inspection trajectories and search them with frozen CLIP ViT-B/32:
 
 - egocentric RGB frames showing what the agent sees;
 - a full-map overview for each episode;
 - agent position, direction, action, seed, and logical time;
 - stable object identities and visible-object metadata;
-- deterministic JSON manifests for later retrieval experiments.
+- deterministic JSON manifests for later retrieval experiments;
+- persistent normalized image embeddings;
+- exact text-to-image and image-to-image retrieval;
+- episode filtering, action context, and JSON query output.
 
-CLIP retrieval, task-relevant evaluation, the failure atlas, and the local
-interface belong to later phases and have not been implemented yet.
+Task-relevant evaluation, the failure atlas, and the local interface belong to
+later phases and have not been implemented yet.
 
 The full research plan is available in [docs/visual_memory_lab_plan.md](docs/visual_memory_lab_plan.md).
+The Phase 2 design and real-model results are documented in
+[docs/phases/02_visual_memory.md](docs/phases/02_visual_memory.md).
 
 ## Local setup
 
@@ -86,12 +91,21 @@ uv run visual-memory-lab generate `
   --seed 42 `
   --max-steps 100 `
   --output data/trajectories/phase-01-demo
+
+uv run visual-memory-lab index `
+  --input data/trajectories/phase-01-demo `
+  --output outputs/phase-02-clip-index
+
+uv run visual-memory-lab query `
+  --index outputs/phase-02-clip-index `
+  --text "a blue box" `
+  --top-k 5
 ```
 
 The default research run contains 10 episodes and 380 observations. Generated
-images and manifests remain local and are ignored by Git. Choose a new output
-directory for each run; the command will not replace an existing non-empty
-directory.
+images, manifests, embeddings, and model weights remain local and are ignored
+by Git. Choose a new output directory for each generated run or index; commands
+will not replace an existing non-empty directory.
 
 Run the test suite with:
 
