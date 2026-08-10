@@ -24,7 +24,7 @@ MiniGrid is used as a controlled test bench for this problem. It provides repeat
 
 This is different from asking whether two images look alike. The most visually similar image may come from the wrong room, the wrong time, or the wrong object. The useful memory is the one that contains the evidence needed for the task.
 
-## How the first version will work
+## How the project will work
 
 1. Generate reproducible navigation trajectories in MiniGrid.
 2. Save each RGB observation with simulator metadata.
@@ -61,7 +61,17 @@ Each case will show the query, the retrieved observation, the simulator ground t
 
 ## Current status
 
-The repository currently contains the project plan and the initial Python scaffold. The simulator, memory index, evaluation pipeline, and interface have not been implemented yet.
+Phase 1 is implemented. The repository can now generate reproducible MiniGrid
+inspection trajectories with:
+
+- egocentric RGB frames showing what the agent sees;
+- a full-map overview for each episode;
+- agent position, direction, action, seed, and logical time;
+- stable object identities and visible-object metadata;
+- deterministic JSON manifests for later retrieval experiments.
+
+CLIP retrieval, task-relevant evaluation, the failure atlas, and the local
+interface belong to later phases and have not been implemented yet.
 
 The full research plan is available in [docs/visual_memory_lab_plan.md](docs/visual_memory_lab_plan.md).
 
@@ -71,7 +81,20 @@ The project uses Python 3.13 and `uv`.
 
 ```powershell
 uv sync
-uv run python main.py
+uv run visual-memory-lab generate `
+  --episodes 10 `
+  --seed 42 `
+  --max-steps 100 `
+  --output data/trajectories/phase-01-demo
 ```
 
-At this stage, the command only runs the scaffold entry point. It will be replaced with the first simulator workflow during implementation.
+The default research run contains 10 episodes and 380 observations. Generated
+images and manifests remain local and are ignored by Git. Choose a new output
+directory for each run; the command will not replace an existing non-empty
+directory.
+
+Run the test suite with:
+
+```powershell
+uv run python -m pytest -q
+```
