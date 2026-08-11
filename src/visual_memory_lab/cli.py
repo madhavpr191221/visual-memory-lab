@@ -161,6 +161,9 @@ def build_parser() -> argparse.ArgumentParser:
     serve.add_argument("--web-dist", type=Path, default=Path("web/dist"))
     serve.add_argument("--analysis-cache", type=Path, default=Path("outputs/phase4/vlm-cache"))
     serve.add_argument("--analysis-model", default="gpt-5.6-terra")
+    serve.add_argument("--change-audit", type=Path, default=Path("outputs/phase6a/office-audit"))
+    serve.add_argument("--change-baseline", type=Path, default=Path("outputs/phase6a/change-baseline"))
+    serve.add_argument("--change-review", type=Path, default=Path("outputs/phase6a/vlm-review"))
     serve.add_argument("--device", default="auto")
     serve.add_argument("--host", default="127.0.0.1")
     serve.add_argument("--port", type=_positive_integer, default=8000)
@@ -369,6 +372,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                 verify_source=args.verify_source,
                 analysis_model=args.analysis_model,
                 analysis_cache=args.analysis_cache,
+                change_audit=args.change_audit,
+                change_baseline=args.change_baseline,
+                change_review=args.change_review,
             )
         )
         uvicorn.run(app, host=args.host, port=args.port)

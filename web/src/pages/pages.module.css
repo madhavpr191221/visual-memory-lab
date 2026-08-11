@@ -79,3 +79,42 @@
 .landmarks { display: flex; flex-wrap: wrap; gap: 7px; }
 .landmarks span { background: var(--blue-soft); color: var(--blue); padding: 5px 8px; border-radius: 8px; font-size: 11px; }
 @media (max-width: 760px) { .hero, .detailGrid { grid-template-columns: 1fr; gap: 24px; } .question { grid-template-columns: 1fr; } .primary { min-height: 48px; } .modeRow, .answerStrip, .analysisBar { align-items: flex-start; flex-direction: column; } .answerStrip { display: flex; } }
+
+.claimBoundary { display: flex; gap: 14px; align-items: baseline; padding: 16px 20px; margin: 22px 0 28px; border-left: 4px solid #a84032; background: #f7dfd9; border-radius: 0 14px 14px 0; }
+.claimBoundary span { color: #60352f; line-height: 1.55; }
+.processFlow { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin: 18px 0; }
+.processFlow div { position: relative; min-height: 92px; padding: 14px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); }
+.processFlow div:not(:last-child)::after { content: "\2192"; position: absolute; right: -11px; top: 34px; z-index: 2; color: var(--blue); font-size: 19px; }
+.processFlow span { display: block; color: var(--blue); font-size: 11px; font-weight: 800; margin-bottom: 8px; }
+.processFlow strong { font-size: 13px; line-height: 1.35; }
+.formula { padding: 22px; display: grid; grid-template-columns: minmax(220px, .5fr) 1fr; gap: 24px; align-items: center; }
+.formula code { font-family: var(--serif); font-size: clamp(22px, 3vw, 34px); color: var(--blue); }
+.formula p { margin: 0; color: var(--muted); line-height: 1.65; }
+.observationTabs, .pairTabs { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+.observationTabs button, .pairTabs button { border: 1px solid var(--line); background: var(--surface); color: var(--muted); padding: 9px 13px; border-radius: 10px; font-weight: 700; }
+.observationTabs .selectedTab, .pairTabs .selectedTab { border-color: var(--blue); background: var(--blue); color: white; }
+.contactSheet { width: 100%; display: block; border: 1px solid var(--line); border-radius: 16px; }
+.frameGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 10px; margin-top: 14px; }
+.frameGrid a { color: var(--ink); text-decoration: none; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.frameGrid img { width: 100%; aspect-ratio: 16/9; object-fit: cover; display: block; }
+.frameGrid span { display: block; padding: 7px 9px; font-size: 11px; color: var(--muted); }
+.compareGrid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 16px 0; }
+.changeFigure { overflow: hidden; margin: 0; }
+.changeFigure img { width: 100%; display: block; background: white; }
+.changeFigure figcaption { padding: 14px 16px; display: grid; gap: 5px; }
+.changeFigure figcaption span { color: var(--muted); font-size: 12px; }
+.pairSummary { padding: 16px 18px; background: var(--blue-soft); border-radius: 12px; line-height: 1.65; }
+.verdictLegend { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 14px; color: var(--muted); font-size: 12px; }
+.verdictLegend span { padding: 6px 9px; background: var(--surface-2); border-radius: 8px; }
+.reviewGrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; }
+.reviewCard { padding: 17px; }
+.reviewTop { display: flex; justify-content: space-between; gap: 10px; align-items: center; color: var(--muted); font-size: 11px; }
+.verdict { padding: 4px 7px; border-radius: 7px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; }
+.supported { color: #176648; background: #dcefe7; }
+.uncertain { color: #7d5a13; background: #f4e8c5; }
+.unsupported { color: #98382f; background: #f5deda; }
+.reviewCard code { display: block; margin-top: 13px; color: var(--blue); font-size: 10px; overflow-wrap: anywhere; }
+.reviewCard h3 { margin: 9px 0 5px; font-size: 20px; text-transform: capitalize; }
+.reviewCard p { margin: 0; line-height: 1.55; }
+.reviewCard small { display: block; margin-top: 9px; color: var(--muted); line-height: 1.5; }
+@media (max-width: 900px) { .processFlow { grid-template-columns: 1fr; } .processFlow div { min-height: auto; } .processFlow div:not(:last-child)::after { content: "\2193"; right: 18px; top: auto; bottom: -16px; } .formula, .compareGrid { grid-template-columns: 1fr; } }

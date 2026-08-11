@@ -11,6 +11,7 @@ from PIL import Image
 from visual_memory_lab.api import AppConfig, AppResources, create_app
 
 from tests.test_ui_service import make_service
+from tests.test_change_showcase import make_change_showcase
 
 
 def _client(tmp_path: Path) -> TestClient:
@@ -88,6 +89,24 @@ def test_evaluation_zone_and_failure_endpoints(tmp_path: Path) -> None:
         detail = client.get("/api/queries/query:0").json()
         assert detail["retrievals"][0]["image_url"].endswith("memory:0")
         assert client.get("/api/queries/missing").status_code == 404
+
+
+def test_phase6a_showcase_and_allowlisted_image(tmp_path: Path) -> None:
+    service = make_service(tmp_path)
+    resources = AppResources(
+        service=service,
+        memory=service.memory,
+        queries=service.queries,
+        changes=make_change_showcase(tmp_path / "changes"),
+    )
+    with TestClient(create_app(AppConfig(web_dist=tmp_path / "missing"), resources=resources)) as client:
+        response = client.get("/api/phase6a")
+        assert response.status_code == 200
+        assert response.json()["metrics"]["geometric_candidate_count"] == 2
+        image = client.get("/api/phase6a/images/pair-0-to-1-current-only")
+        assert image.status_code == 200
+        assert image.headers["content-type"] == "image/png"
+        assert client.get("/api/phase6a/images/unknown").status_code == 404
 
 
 class FakeAnalyzer:

@@ -5,6 +5,7 @@ import { HomePage } from "./pages/HomePage";
 import { QueryDetailPage } from "./pages/QueryDetailPage";
 import { ZoneDetailPage } from "./pages/ZoneDetailPage";
 import { ZonesPage } from "./pages/ZonesPage";
+import { ChangesPage } from "./pages/ChangesPage";
 import styles from "./App.module.css";
 
 function Layout() {
@@ -23,11 +24,12 @@ function Layout() {
           <NavLink to="/lab/evaluation">Evidence Lab</NavLink>
           <NavLink to="/lab/failures">Failures</NavLink>
           <NavLink to="/lab/zones">Zones</NavLink>
+          <NavLink to="/lab/changes">Changes</NavLink>
         </nav>
       </header>
       <main className={styles.main}><Outlet /></main>
       <footer className={styles.footer}>
-        Public 7-Scenes Office data | Exact CLIP memory | Local retrieval
+        Public office data | Visual memory | 3D state-change evidence
       </footer>
     </div>
   );
@@ -43,6 +45,7 @@ export default function App() {
         <Route path="lab/queries/:queryId" element={<QueryDetailPage />} />
         <Route path="lab/zones" element={<ZonesPage />} />
         <Route path="lab/zones/:zoneSlug" element={<ZoneDetailPage />} />
+        <Route path="lab/changes" element={<ChangesPage />} />
       </Route>
     </Routes>
   );

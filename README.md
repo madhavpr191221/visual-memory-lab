@@ -143,6 +143,18 @@ uv run visual-memory-lab prepare-eth-office `
 Then open `outputs/phase6a/office-audit/index.html` in a browser. The complete
 geometry and VLM commands are documented in the Phase 6A guide.
 
+To use the React showcase:
+
+```powershell
+cd web
+npm run build
+cd ..
+uv run visual-memory-lab serve-ui
+```
+
+Open `http://127.0.0.1:8000/lab/changes` to browse all four scans, compare any
+of the six mesh pairs, and inspect the structured VLM reviews.
+
 ## Dataset and model citations
 
 This project reports results on the 7-Scenes dataset and uses the frozen CLIP

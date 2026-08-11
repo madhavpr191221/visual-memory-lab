@@ -4,6 +4,7 @@ import type {
   QueryPage,
   SearchResponse,
   Zone,
+  Phase6aShowcase,
 } from "./types";
 
 export class ApiError extends Error {
@@ -45,6 +46,7 @@ export const api = {
     return request<SearchResponse>("/api/search/image", { method: "POST", body });
   },
   evaluation: () => request<Record<string, unknown>>("/api/evaluation"),
+  phase6a: () => request<Phase6aShowcase>("/api/phase6a"),
   zones: () => request<Zone[]>("/api/zones"),
   zone: (slug: string) => request<Zone>(`/api/zones/${encodeURIComponent(slug)}`),
   queries: (offset: number, tag: string) => {

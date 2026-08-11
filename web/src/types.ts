@@ -80,3 +80,61 @@ export interface QueryPage {
   total: number;
   items: QueryListItem[];
 }
+
+export interface ChangeCandidateReview {
+  candidate_id: string;
+  verdict: "supported" | "unsupported" | "uncertain";
+  interpretation: "current_only" | "earlier_only" | "possible_move" | "unknown";
+  description: string;
+  confidence: "low" | "medium" | "high";
+  evidence_ids: string[];
+  limitations: string[];
+  related_candidate_id: string | null;
+}
+
+export interface ChangeObservation {
+  observation_id: string;
+  logical_order: number;
+  frame_count: number;
+  frames: { message_index: number; timestamp_ns: number; image_url: string }[];
+  contact_sheet_url: string;
+  vlm_contact_sheet_url: string;
+}
+
+export interface ChangePair {
+  pair_id: string;
+  earlier_observation: number;
+  current_observation: number;
+  consecutive: boolean;
+  current_only_candidate_count: number;
+  earlier_only_candidate_count: number;
+  current_only_projection_url: string;
+  earlier_only_projection_url: string;
+  changed_fraction: Record<string, { current_only: number; earlier_only: number }>;
+  point_to_point: Record<string, unknown>;
+  reviewed_candidates: ChangeCandidateReview[];
+  review_limitations: string[];
+}
+
+export interface Phase6aShowcase {
+  dataset: string;
+  logical_order_note: string;
+  claim_boundary: string;
+  metrics: {
+    observation_count: number;
+    rgb_sample_count: number;
+    pair_count: number;
+    geometric_candidate_count: number;
+    reviewed_candidate_count: number;
+    accepted_pseudo_reference_count: number;
+    verdict_counts: { supported: number; uncertain: number; unsupported: number };
+  };
+  method: {
+    voxel_size_m: number;
+    primary_threshold_m: number;
+    distance_thresholds_m: number[];
+    min_cluster_voxels: number;
+  };
+  observations: ChangeObservation[];
+  pairs: ChangePair[];
+}

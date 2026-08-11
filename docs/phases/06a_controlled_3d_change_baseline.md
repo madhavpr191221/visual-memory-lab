@@ -34,6 +34,256 @@ complete overlap. That controlled setup is useful because it lets the project
 study scene differencing before adding handheld-camera motion and incomplete
 coverage.
 
+## The complete flow, in physical terms
+
+Suppose the office is scanned twice:
+
+```text
+Earlier office scan
+        +
+Current office scan
+        |
+        v
+Put both reconstructions in the same 3D coordinate system
+        |
+        v
+Compare corresponding physical locations
+        |
+        v
+Highlight geometry found in only one observation
+        |
+        v
+Group those differences into candidate changes
+        |
+        v
+Show the RGB and 3D evidence
+```
+
+Each line hides a specific perception operation. The following sections unpack
+those operations and distinguish what ETH already supplies from what Visual
+Memory Lab computes.
+
+### 1. What is an office scan?
+
+One **scan**, called an observation in this dataset, is not one photograph. It
+is a sequence of synchronized sensor measurements collected while a tripod
+camera pans and tilts around the room.
+
+For image index $k$ in logical observation $t$, the sensor provides quantities
+conceptually written as
+
+$$
+O_t^k = \left(I_t^k, D_t^k, T_{G\leftarrow C,t}^k\right),
+$$
+
+where:
+
+- $I_t^k$ is the RGB image;
+- $D_t^k$ is depth information, represented in the bags as point clouds;
+- $T_{G\leftarrow C,t}^k$ transforms a camera-frame point into the common
+  global frame $G$;
+- $t\in\{0,1,2,3\}$ identifies the logical office observation;
+- $k$ identifies one camera measurement within that observation.
+
+The camera sees only part of the office at any instant. The complete scan is
+the collection of those partial views.
+
+### 2. From depth pixels to physical 3D points
+
+For a conventional depth image, pixel $(u,v)$ with depth $z$ is back-projected
+through the camera intrinsic matrix $K$:
+
+$$
+\mathbf x_C
+=
+zK^{-1}
+\begin{bmatrix}
+u\\v\\1
+\end{bmatrix}.
+$$
+
+$\mathbf x_C$ is a metric point in the camera coordinate system. Its global
+position is
+
+$$
+\tilde{\mathbf x}_G
+=
+T_{G\leftarrow C,t}^k\tilde{\mathbf x}_C,
+$$
+
+where the tilde denotes homogeneous coordinates. This transformation removes
+the camera's changing pan/tilt pose: points on the same physical desk should
+land near the same global coordinates even when observed from different camera
+directions.
+
+The ETH bags already contain `point_cloud_G`, so they expose points after this
+camera-to-global transformation as well as the raw camera-frame cloud.
+
+### 3. What is a reconstruction?
+
+A single RGB-D frame contains only a partial surface measurement. A
+**reconstruction** fuses measurements from the complete scan into a coherent
+3D model:
+
+$$
+R_t
+=
+\operatorname{Fuse}
+\left(
+O_t^1,O_t^2,\ldots,O_t^{K_t}
+\right).
+$$
+
+The original ETH system used a truncated signed distance field, or TSDF. A
+TSDF stores, at each voxel, an estimate of signed distance to the closest
+observed surface. Repeated depth measurements are integrated so that noisy
+individual frames contribute to one denser surface model. A mesh is then
+extracted from the zero crossing of that field.
+
+Important implementation boundary:
+
+> Visual Memory Lab does not rebuild the TSDF in Phase 6A. ETH supplies one
+> complete, already aligned PLY reconstruction for each observation. Phase 6A
+> begins from those four meshes.
+
+Rebuilding and evaluating the fusion process would be a separate 3D systems
+experiment.
+
+### 4. What does “the same coordinate system” mean?
+
+Let $G$ be the global office coordinate frame. If two reconstructions are
+aligned, a physical location such as the left corner of a desk has comparable
+coordinates in both:
+
+$$
+\mathbf x_G^{(t_1)} \approx \mathbf x_G^{(t_2)}.
+$$
+
+Without this property, the entire room would appear to move when the camera
+pose changed. Normally an application might estimate a rigid transform
+
+$$
+T^* = \arg\min_T \sum_i
+\left\|T\mathbf p_i-\mathbf q_{\pi(i)}\right\|_2^2
+$$
+
+using feature matching or ICP. Phase 6A deliberately does not do this: ETH
+states that its supplied reconstructions are aligned. Applying new ICP could
+reduce a genuine object displacement by treating it as registration error.
+
+### 5. Compare corresponding physical locations
+
+Let $P$ contain earlier surface points and $Q$ contain current surface points.
+Exact point indices do not correspond across independently reconstructed
+meshes, so the implementation uses the nearest surface location:
+
+$$
+d_{Q\rightarrow P}(\mathbf q)
+=
+\min_{\mathbf p\in P}
+\|\mathbf q-\mathbf p\|_2.
+$$
+
+If this distance is small, the current surface has a nearby earlier
+counterpart. If it exceeds threshold $\tau$, the surface becomes a difference
+candidate:
+
+$$
+\mathbf q\in C_{\mathrm{current}}
+\iff
+d_{Q\rightarrow P}(\mathbf q)>\tau.
+$$
+
+The reverse comparison is equally important:
+
+$$
+\mathbf p\in C_{\mathrm{earlier}}
+\iff
+d_{P\rightarrow Q}(\mathbf p)>\tau.
+$$
+
+This bidirectional computation distinguishes geometry found only in the
+current reconstruction from geometry found only in the earlier reconstruction.
+
+### 6. Why the comparison is performed on voxels
+
+Meshes contain hundreds of thousands of vertices and the two reconstructions
+do not sample surfaces identically. Phase 6A first maps them to a regular 2 cm
+grid:
+
+$$
+\mathbf k(\mathbf x)
+=
+\left\lfloor\frac{\mathbf x}{0.02}\right\rfloor.
+$$
+
+All vertices with the same integer key are represented by their mean position,
+colour, and normal. This reduces redundant surface samples and gives the
+clustering stage a stable spatial neighbourhood.
+
+### 7. Highlight geometry found in only one observation
+
+The primary threshold is $\tau=0.05$ m. Therefore, a current voxel is
+highlighted when no earlier voxel lies within five centimetres. The experiment
+also repeats the measurement at 2 cm and 10 cm.
+
+The labels mean only:
+
+- `current-only`: reconstructed here in $Q$, with no nearby surface in $P$;
+- `earlier-only`: reconstructed here in $P$, with no nearby surface in $Q$.
+
+They do **not** automatically mean “object added” and “object removed.” Missing
+coverage, noise, and reconstruction holes can produce the same geometric
+pattern.
+
+### 8. Group changed voxels into candidates
+
+One object should be more useful than thousands of isolated changed points.
+Changed voxels therefore form an undirected graph
+
+$$
+\mathcal G=(V,E),
+$$
+
+where each changed voxel is a vertex and
+
+$$
+(i,j)\in E
+\iff
+\|\mathbf k_i-\mathbf k_j\|_\infty\le 1.
+$$
+
+This is 26-neighbour connectivity in a 3D grid. Each connected component is a
+candidate cluster. Components containing fewer than 20 changed voxels are
+discarded.
+
+A moved object can produce two candidates:
+
+```text
+earlier-only cluster at the old location
+             +
+current-only cluster at the new location
+             =
+possible moved object
+```
+
+Phase 6A does not yet learn or guarantee that association.
+
+### 9. Show RGB and 3D evidence
+
+The geometric projection identifies *where* the reconstruction differs, but
+RGB helps a reviewer decide *what is visibly there*. For each pair the system
+shows:
+
+1. eight representative RGB views from the earlier scan;
+2. eight representative RGB views from the current scan;
+3. top/front/side projections of current-only clusters;
+4. top/front/side projections of earlier-only clusters.
+
+The VLM reviews only named, numbered candidates from that evidence. It cannot
+invent new cluster IDs, and its supported candidates remain a pseudo-reference
+rather than human ground truth.
+
 ## Inputs
 
 The local dataset contains four logical observations. Each observation has:
@@ -279,3 +529,73 @@ baseline. The leading candidates are:
 
 The choice will be made from the Phase 6A failure distribution rather than from
 the desire to train a network for its own sake.
+
+## How to test and inspect Phase 6A
+
+### Fast automated checks
+
+From the repository root:
+
+```powershell
+uv run python -m pytest
+cd web
+npm test
+npm run build
+```
+
+The Python tests cover PLY loading, voxel aggregation, bidirectional residuals,
+connected components, VLM schema validation, caching, the secure UI catalog,
+and API image allowlisting. The web tests cover the evidence page and existing
+retrieval interface.
+
+### Inspect the already generated evidence
+
+Open these files directly:
+
+```text
+outputs/phase6a/office-audit/index.html
+outputs/phase6a/change-baseline/index.html
+outputs/phase6a/vlm-review/index.html
+```
+
+The first proves that real RGB frames were decoded. The second shows all six
+3D comparisons. The third shows the structured VLM judgments and limitations.
+
+### Run the React showcase
+
+Build and serve the application:
+
+```powershell
+cd web
+npm run build
+cd ..
+uv run visual-memory-lab serve-ui
+```
+
+Then visit:
+
+```text
+http://127.0.0.1:8000/lab/changes
+```
+
+The **Changes** page lets the viewer switch among four scans, open all 96 RGB
+frames, select any of the six observation pairs, compare earlier/current RGB
+evidence, inspect both directional 3D projections, and read the VLM verdicts.
+
+### Re-run the local geometry without overwriting accepted artifacts
+
+Use a new output directory:
+
+```powershell
+uv run visual-memory-lab evaluate-eth-change `
+  --manifest outputs/phase6a/office-audit/manifest.json `
+  --output outputs/phase6a/test-change-baseline
+```
+
+The expected acceptance count is 917 geometric candidates with the documented
+defaults. Small floating-point differences across SciPy/platform versions
+should be investigated rather than silently replacing the frozen artifact.
+
+The VLM review is a separate paid cloud action. It should not be rerun merely
+to test local geometry; use the existing cache and frozen summary unless a
+prompt, model, schema, or evidence image intentionally changes.
