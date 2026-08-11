@@ -90,6 +90,10 @@ Office scene. See
 for the exact split, VLM-assisted zone protocol, pose-grounded metrics, actual
 results, and technician interpretation.
 
+For the complete Phase 3 to Phase 4 handoff, including exactly how the frozen
+zones become UI cards and search-time agreement counts, see
+[`phases/03_04_real_office_visual_memory_system.md`](phases/03_04_real_office_visual_memory_system.md).
+
 Do not judge memory only by cosine similarity.
 
 The implemented real-image study uses held-out camera sequences and measured
@@ -144,6 +148,7 @@ user-selected public frames. It uses a strict response schema, validates
 evidence citations, caches public text judgments, and never caches an uploaded
 query image. The detailed design is in
 [phases/04_office_memory_explorer.md](phases/04_office_memory_explorer.md).
+The combined Phase 3 and 4 system guide is the preferred end-to-end reference.
 
 ## Phase 5 - Field-data bridge
 
