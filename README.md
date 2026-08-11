@@ -92,10 +92,13 @@ confirmed action and remains disabled when no OpenAI API key is configured.
 The full research plan is available in [docs/visual_memory_lab_plan.md](docs/visual_memory_lab_plan.md).
 The Phase 2 design and real-model results are documented in
 [docs/phases/02_visual_memory.md](docs/phases/02_visual_memory.md).
-The real-image Phase 3 methodology, technician example, and complete results are
-documented in [docs/phases/03_real_image_place_memory.md](docs/phases/03_real_image_place_memory.md).
-The Phase 4 interface, evidence flow, privacy boundary, and technician example
-are documented in [docs/phases/04_office_memory_explorer.md](docs/phases/04_office_memory_explorer.md).
+The best single guide to the real-image system is
+[Phases 3 and 4: The Real-Office Visual Memory System](docs/phases/03_04_real_office_visual_memory_system.md).
+It follows the complete path from the public dataset and VLM-assisted zone
+creation to local retrieval, zone voting, evidence analysis, and the React UI.
+The original [Phase 3 methodology](docs/phases/03_real_image_place_memory.md)
+and [Phase 4 interface notes](docs/phases/04_office_memory_explorer.md) remain as
+phase-specific references.
 
 ## Local setup
 
