@@ -121,6 +121,9 @@ phase-specific references.
 The retrieval-and-alignment bridge is documented in
 [Phase 5: Cross-Traversal Revisit Memory](docs/phases/05_cross_traversal_memory.md).
 
+For a user-facing catalogue of supported, planned, and unsupported questions,
+see [What Can a User Ask the Visual Memory Lab?](docs/user_question_catalog.md).
+
 [Phase 6A: Controlled 3D State-Change Baseline](docs/phases/06a_controlled_3d_change_baseline.md).
 
 Phase 6A extracts 96 browsable RGB frames, compares all six aligned mesh pairs,
