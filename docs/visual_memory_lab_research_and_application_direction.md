@@ -771,13 +771,25 @@ captured.
 
 ## Candidate research progression
 
-### Phase 6: Controlled state-change benchmark
+### Phase 6A: Controlled 3D state-change baseline (implemented)
 
-- create or adopt repeated visits with verified order;
-- script added, removed, moved, and state-changed objects;
-- capture multiple viewpoints per state;
-- establish oracle-pair and retrieved-pair baselines;
-- measure false changes caused by viewpoint and occlusion.
+- adopted four logically ordered, aligned RGB-D/3D observations from the ETH
+  ASL Change Detection Office dataset;
+- produced a 96-frame visual audit and compared all six mesh pairs;
+- measured bidirectional point-to-point and point-to-plane disagreement;
+- generated 917 geometric candidate clusters at the 5 cm baseline;
+- reviewed the 72 largest candidates with a strict VLM schema and retained 47
+  medium/high-confidence candidates in a pseudo-reference;
+- documented fragmentation, reconstruction boundaries, missing coverage, and
+  VLM uncertainty without claiming human-labelled accuracy.
+
+### Phase 6B: Learned improvement for a measured bottleneck
+
+- freeze the Phase 6A geometry and reports as the baseline;
+- select cluster association, correspondence, or RGB-D candidate
+  classification based on the measured failure distribution;
+- train on a separately labelled or synthetic source;
+- evaluate transfer to ETH Office and compare against the frozen baseline.
 
 ### Phase 7: Object-centric memory
 

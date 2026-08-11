@@ -26,6 +26,13 @@ def _non_negative_integer(value: str) -> int:
     return parsed
 
 
+def _positive_float(value: str) -> float:
+    parsed = float(value)
+    if parsed <= 0:
+        raise argparse.ArgumentTypeError("must be positive")
+    return parsed
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="visual-memory-lab",
@@ -102,6 +109,38 @@ def build_parser() -> argparse.ArgumentParser:
     traversal.add_argument("--query-index", type=Path, required=True)
     traversal.add_argument("--output", type=Path, required=True)
     traversal.add_argument("--seed", type=_non_negative_integer, default=42)
+
+    prepare_eth = subparsers.add_parser(
+        "prepare-eth-office",
+        help="audit ETH Office bags and meshes and create a browsable RGB gallery",
+    )
+    prepare_eth.add_argument("--input", type=Path, required=True)
+    prepare_eth.add_argument("--output", type=Path, required=True)
+    prepare_eth.add_argument("--rgb-samples", type=_positive_integer, default=24)
+    prepare_eth.add_argument("--vlm-samples", type=_positive_integer, default=8)
+
+    evaluate_change = subparsers.add_parser(
+        "evaluate-eth-change",
+        help="produce deterministic change candidates from aligned ETH Office meshes",
+    )
+    evaluate_change.add_argument("--manifest", type=Path, required=True)
+    evaluate_change.add_argument("--output", type=Path, required=True)
+    evaluate_change.add_argument("--voxel-size", type=_positive_float, default=0.02)
+    evaluate_change.add_argument(
+        "--distance-thresholds", type=_positive_float, nargs="+", default=[0.02, 0.05, 0.10]
+    )
+    evaluate_change.add_argument("--primary-threshold", type=_positive_float, default=0.05)
+    evaluate_change.add_argument("--min-cluster-voxels", type=_positive_integer, default=20)
+
+    review_change = subparsers.add_parser(
+        "review-eth-change",
+        help="create a cached VLM pseudo-reference for ETH Office change candidates",
+    )
+    review_change.add_argument("--baseline", type=Path, required=True)
+    review_change.add_argument("--audit", type=Path, required=True)
+    review_change.add_argument("--output", type=Path, required=True)
+    review_change.add_argument("--cache-dir", type=Path, default=Path("outputs/phase6a/vlm-cache"))
+    review_change.add_argument("--model", default="gpt-5.6-terra")
 
     serve = subparsers.add_parser(
         "serve-ui",
@@ -350,5 +389,56 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(
             f"Evaluated {metrics['query_target_count']} query-target combinations "
             f"across {metrics['pair_count']} traversal pairs in {args.output.resolve()}"
+        )
+    elif args.command == "prepare-eth-office":
+        from visual_memory_lab.eth_office import prepare_eth_office
+
+        try:
+            manifest = prepare_eth_office(
+                dataset_root=args.input,
+                output=args.output,
+                rgb_samples=args.rgb_samples,
+                vlm_samples=args.vlm_samples,
+            )
+        except (FileExistsError, OSError, ValueError) as error:
+            parser.error(str(error))
+        print(
+            f"Prepared {len(manifest['observations'])} ETH Office observations with "
+            f"{manifest['rgb_samples_per_observation']} RGB samples each in {args.output.resolve()}"
+        )
+    elif args.command == "evaluate-eth-change":
+        from visual_memory_lab.change_detection import evaluate_eth_change
+
+        try:
+            run = evaluate_eth_change(
+                manifest_path=args.manifest,
+                output=args.output,
+                voxel_size=args.voxel_size,
+                distance_thresholds=tuple(args.distance_thresholds),
+                primary_threshold=args.primary_threshold,
+                min_cluster_voxels=args.min_cluster_voxels,
+            )
+        except (FileExistsError, OSError, ValueError) as error:
+            parser.error(str(error))
+        print(
+            f"Compared {run['pair_count']} ETH Office pairs and wrote "
+            f"{run['candidate_count']} geometric candidates to {args.output.resolve()}"
+        )
+    elif args.command == "review-eth-change":
+        from visual_memory_lab.change_review import review_eth_changes
+
+        try:
+            summary = review_eth_changes(
+                baseline=args.baseline,
+                audit=args.audit,
+                output=args.output,
+                cache_dir=args.cache_dir,
+                model=args.model,
+            )
+        except (FileExistsError, OSError, RuntimeError, ValueError) as error:
+            parser.error(str(error))
+        print(
+            f"Reviewed {summary['reviewed_candidate_count']} geometric candidates and accepted "
+            f"{summary['accepted_pseudo_reference_count']} into the VLM pseudo-reference"
         )
     return 0
