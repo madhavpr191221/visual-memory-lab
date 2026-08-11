@@ -82,16 +82,25 @@ Each result returns:
 
 Use Flat search first. Add one compressed index only after the memory behavior works.
 
-## Phase 3 - Task-relevant retrieval
+## Phase 3 - Real-image place memory
+
+Status: implemented and validated on all 10,000 RGB frames from the 7-Scenes
+Office scene. See
+[`phases/03_real_image_place_memory.md`](phases/03_real_image_place_memory.md)
+for the exact split, VLM-assisted zone protocol, pose-grounded metrics, actual
+results, and technician interpretation.
 
 Do not judge memory only by cosine similarity.
 
-For each query, simulator state provides ground truth. Measure:
+The implemented real-image study uses held-out camera sequences and measured
+camera poses. It reports:
 
-- **event hit@k:** does one of the retrieved observations contain the target object/event?
-- **episode hit@k:** did the system retrieve an observation from the correct episode?
-- **temporal error:** how far is the retrieved timestep from the target event?
-- **pose error:** how far is the retrieved agent position from the relevant location?
+- strict and relaxed pose hit@1/5/10;
+- query coverage and pose-oracle coverage ceiling;
+- top-1 translation and orientation error;
+- fixed-seed random baselines and per-sequence results;
+- stride-10 sensitivity;
+- semantic zone hit@k and precision@k for frozen VLM-assisted labels.
 
 The important comparison is:
 
@@ -101,7 +110,9 @@ versus
 task-relevant memory retrieval
 ```
 
-A visually similar frame is not necessarily the frame useful for navigation or reasoning.
+A visually similar frame is not necessarily the frame from the correct physical
+work area. Simulator event and temporal metrics remain useful future controlled
+experiments; they are not mixed into the completed real-image pose benchmark.
 
 ## Phase 4 - Failure atlas
 

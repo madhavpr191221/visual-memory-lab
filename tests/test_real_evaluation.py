@@ -102,4 +102,3 @@ def test_text_zone_metrics_use_frozen_assignments(tmp_path: Path) -> None:
     assert metrics["assignment_coverage"] == 0.5
     assert metrics["macro_hit_at_1"] == 1.0
     assert all(row["precision_at_1"] == 1.0 for row in rows)
-

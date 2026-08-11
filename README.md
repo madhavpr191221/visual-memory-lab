@@ -1,6 +1,6 @@
 # Visual Memory Lab
 
-Visual Memory Lab is a small research project about finding useful evidence in a history of images.
+Visual Memory Lab is a small research project about finding useful evidence in a history of images. It now works with both controlled MiniGrid trajectories and public real-world Office images from 7-Scenes.
 
 The basic problem is simple: a camera may record thousands of observations over time, but storing those images is not enough. When someone asks about an earlier event, the system must retrieve the right image even if the viewpoint, lighting, surroundings, or appearance of an object has changed.
 
@@ -61,8 +61,9 @@ Each case will show the query, the retrieved observation, the simulator ground t
 
 ## Current status
 
-Phases 1 and 2 are implemented. The repository can generate reproducible
-MiniGrid inspection trajectories and search them with frozen CLIP ViT-B/32:
+Phases 1 through 3 are implemented. The repository can generate reproducible
+MiniGrid inspection trajectories, search them with frozen CLIP ViT-B/32, and
+evaluate real-image place memory on 10,000 7-Scenes Office frames:
 
 - egocentric RGB frames showing what the agent sees;
 - a full-map overview for each episode;
@@ -72,13 +73,22 @@ MiniGrid inspection trajectories and search them with frozen CLIP ViT-B/32:
 - persistent normalized image embeddings;
 - exact text-to-image and image-to-image retrieval;
 - episode filtering, action context, and JSON query output.
+- official 6,000-memory / 4,000-query Office split;
+- camera-pose hit@1/5/10, coverage, pose error, random baseline, and stride-10 sensitivity;
+- seven cached VLM-assisted semantic place zones and 21 frozen text queries.
 
-Task-relevant evaluation, the failure atlas, and the local interface belong to
-later phases and have not been implemented yet.
+On the strict 0.25 m / 30 degree criterion, 65.4% of held-out queries have a
+qualifying stored memory. Among those covered queries, exact CLIP retrieval
+reaches 32.2% hit@1, 48.3% hit@5, and 56.3% hit@10. The semantic-zone benchmark
+reaches 71.4% macro hit@10.
+
+The failure atlas and local interface remain later phases.
 
 The full research plan is available in [docs/visual_memory_lab_plan.md](docs/visual_memory_lab_plan.md).
 The Phase 2 design and real-model results are documented in
 [docs/phases/02_visual_memory.md](docs/phases/02_visual_memory.md).
+The real-image Phase 3 methodology, technician example, and complete results are
+documented in [docs/phases/03_real_image_place_memory.md](docs/phases/03_real_image_place_memory.md).
 
 ## Local setup
 
@@ -101,6 +111,11 @@ uv run visual-memory-lab query `
   --text "a blue box" `
   --top-k 5
 ```
+
+The Phase 3 data, indexing, labeling, and evaluation commands are documented in
+the Phase 3 document. `.env` is ignored; copy `.env.example` and set
+`OPENAI_API_KEY` only when generating a new frozen zone artifact. Evaluation is
+offline and never calls the OpenAI API.
 
 The default research run contains 10 episodes and 380 observations. Generated
 images, manifests, embeddings, and model weights remain local and are ignored
