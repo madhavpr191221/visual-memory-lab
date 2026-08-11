@@ -2,6 +2,10 @@
 
 Visual Memory Lab is a small research project about finding useful evidence in a history of images. It now works with both controlled MiniGrid trajectories and the publicly available 7-Scenes Office research dataset.
 
+Phase 6A also evaluates controlled real-scene change using four RGB-D/3D
+observations from ETH Zurich's public Change Detection Office dataset. The
+dataset itself is not redistributed.
+
 > **Research-use notice:** 7-Scenes is provided by Microsoft Research for
 > non-commercial use. This repository is a personal research and portfolio
 > demonstration for hiring-manager review, not a commercial deployment. The
@@ -117,6 +121,28 @@ phase-specific references.
 The retrieval-and-alignment bridge is documented in
 [Phase 5: Cross-Traversal Revisit Memory](docs/phases/05_cross_traversal_memory.md).
 
+[Phase 6A: Controlled 3D State-Change Baseline](docs/phases/06a_controlled_3d_change_baseline.md).
+
+Phase 6A extracts 96 browsable RGB frames, compares all six aligned mesh pairs,
+and produces inspectable geometric candidates. Its VLM output is explicitly a
+pseudo-reference rather than human ground truth. The acceptance run produced
+917 raw clusters; 72 large candidates were reviewed, and 47 medium/high-confidence
+candidates entered the pseudo-reference. The compact frozen counts are in
+[`artifacts/phase6a/summary.json`](artifacts/phase6a/summary.json).
+
+Prepare and view the ETH Office observations:
+
+```powershell
+uv run visual-memory-lab prepare-eth-office `
+  --input data/eth-change-detection/office/office `
+  --output outputs/phase6a/office-audit `
+  --rgb-samples 24 `
+  --vlm-samples 8
+```
+
+Then open `outputs/phase6a/office-audit/index.html` in a browser. The complete
+geometry and VLM commands are documented in the Phase 6A guide.
+
 ## Dataset and model citations
 
 This project reports results on the 7-Scenes dataset and uses the frozen CLIP
@@ -131,6 +157,10 @@ referencing the project:
   Language Supervision.” *ICML*, 2021.
   [Paper](https://proceedings.mlr.press/v139/radford21a.html) ·
   [official CLIP repository](https://github.com/openai/CLIP)
+- Marius Fehr et al. “TSDF-based Change Detection for Consistent Long-Term
+  Dense Reconstruction and Dynamic Object Discovery.” *ICRA*, 2017.
+  [Paper](https://cesarcadena.ethz.ch/files/ICRA2017_mfehr.pdf) ·
+  [ETH dataset page](https://projects.asl.ethz.ch/datasets/change-detection/)
 
 The [7-Scenes dataset page and license](https://www.microsoft.com/en-us/research/project/rgb-d-dataset-7-scenes/)
 restrict the dataset to non-commercial use. CLIP code is published under the

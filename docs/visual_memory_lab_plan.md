@@ -166,18 +166,33 @@ The system treats sequence IDs as traversal identifiers, not timestamps. See
 [`phases/05_cross_traversal_memory.md`](phases/05_cross_traversal_memory.md) for
 the complete protocol and measured results.
 
-## Phase 6 - State-change memory
+## Phase 6A - Controlled 3D state-change baseline (implemented)
 
-Use a second public, simulated, or deliberately collected dataset with
-meaningful changes over time. This is where the project can add:
+Use the public ETH ASL Change Detection Office dataset to compare four aligned
+real RGB-D/3D observations. The implemented phase adds:
 
-- real capture timestamps;
-- repeated inspection rounds;
-- object or condition changes;
-- questions about when a visible state first appeared;
-- evaluation of stale-memory and temporal-boundary failures.
+- a 96-frame browsable RGB audit;
+- deterministic 2 cm voxel representations;
+- bidirectional point-to-point and point-to-plane residuals;
+- 2/5/10 cm threshold sensitivity;
+- connected geometric candidates across all six observation pairs;
+- a strict VLM-supported pseudo-reference over the largest candidates;
+- a failure atlas that exposes fragmentation and reconstruction ambiguity.
 
-Do not infer these capabilities from 7-Scenes Office: its current manifests do
+The acceptance run produced 917 raw candidate clusters. The VLM reviewed the
+72 largest, marked 53 supported, 15 uncertain, and 4 unsupported, and admitted
+47 medium/high-confidence candidates to the pseudo-reference. These are not
+human ground-truth accuracy measurements. See
+[`phases/06a_controlled_3d_change_baseline.md`](phases/06a_controlled_3d_change_baseline.md).
+
+## Phase 6B - Learned improvement for a measured change failure
+
+Freeze the Phase 6A baseline and train one component against a failure it
+actually exposed. Candidate directions include cluster association,
+correspondence, or RGB-D candidate classification using a separately labelled
+or synthetic training source.
+
+Do not infer temporal-change capabilities from 7-Scenes Office: its manifests do
 not contain real calendar time, verified traversal chronology, or recorded
 maintenance events.
 
