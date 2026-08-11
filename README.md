@@ -2,13 +2,10 @@
 
 Visual Memory Lab is a small research project about finding useful evidence in a history of images. It now works with both controlled MiniGrid trajectories and the publicly available 7-Scenes Office research dataset.
 
-Phase 6A also evaluates controlled real-scene change using four RGB-D/3D
-observations from ETH Zurich's public Change Detection Office dataset. The
-dataset itself is not redistributed.
-
-Phase 6B1 adds automatic RGB object localization over 384 dense office
+The current Phase 6.1 work adds automatic RGB object localization over 384 dense office
 keyframes. Frozen Grounding DINO predictions and SAM 2.1 masks replace the
-hand-drawn boxes used in the earlier change showcase.
+hand-drawn boxes used in the earlier change showcase. The dataset itself is not
+redistributed.
 
 > **Research-use notice:** 7-Scenes is provided by Microsoft Research for
 > non-commercial use. This repository is a personal research and portfolio
@@ -75,7 +72,7 @@ Each case will show the query, the retrieved observation, the simulator ground t
 
 ## Current status
 
-Phases 1 through 5, Phase 6A, and Phase 6B1 are implemented. The repository can generate reproducible
+Phases 1 through 5 and the first Phase 6.1 object-localization step are implemented. The repository can generate reproducible
 MiniGrid inspection trajectories, search them with frozen CLIP ViT-B/32, and
 evaluate real-image place memory on 10,000 7-Scenes Office frames:
 
@@ -131,40 +128,18 @@ The retrieval-and-alignment bridge is documented in
 For a user-facing catalogue of supported, planned, and unsupported questions,
 see [What Can a User Ask the Visual Memory Lab?](docs/user_question_catalog.md).
 
-[Phase 6A: Controlled 3D State-Change Baseline](docs/phases/06a_controlled_3d_change_baseline.md).
-
-Phase 6A extracts 96 browsable RGB frames, compares all six aligned mesh pairs,
-and produces inspectable geometric candidates. Its VLM output is explicitly a
-pseudo-reference rather than human ground truth. The acceptance run produced
-917 raw clusters; 72 large candidates were reviewed, and 47 medium/high-confidence
-candidates entered the pseudo-reference. The compact frozen counts are in
-[`artifacts/phase6a/summary.json`](artifacts/phase6a/summary.json).
-
-The automatic object-localization baseline is documented in
-[Phase 6B1: Automatic Object Localization](docs/phases/06b1_object_localization.md).
-The broader object-aware memory design, including the RGB-D and 3D mathematics,
-is documented in [Phase 6B: Object-Aware Change Memory](docs/phases/06b_object_aware_change_memory.md).
-The high-level roadmap for all Phase 6 subphases is in
-[Phase 6: Object-Aware Physical Change Memory](docs/phases/06_phase6_overview.md).
+The current object-localization baseline is documented in
+[Phase 6.1.1: Automatic Object Localization](docs/phases/06_1_object_localization.md).
+The broader object-aware memory design is documented in
+[Phase 6.1: Object-Aware Change Memory](docs/phases/06_1_object_aware_change_memory.md).
+The high-level roadmap is in
+[Phase 6.1 overview](docs/phases/06_1_overview.md).
 Its CUDA acceptance run processed 384 keyframes and retained 1,417 predictions:
 515 chairs, 477 waste bins, and 425 boxes. These are predictions, not correct
 object counts. The completed VLM audit reviewed all 48 requested frames and
 found substantial false positives: 79 supported, 15 uncertain, and 71
 unsupported predictions. Frozen counts and the pseudo-audit boundary are in
 [`artifacts/phase6b1/summary.json`](artifacts/phase6b1/summary.json).
-
-Prepare and view the ETH Office observations:
-
-```powershell
-uv run visual-memory-lab prepare-eth-office `
-  --input data/eth-change-detection/office/office `
-  --output outputs/phase6a/office-audit `
-  --rgb-samples 24 `
-  --vlm-samples 8
-```
-
-Then open `outputs/phase6a/office-audit/index.html` in a browser. The complete
-geometry and VLM commands are documented in the Phase 6A guide.
 
 To use the React showcase:
 
@@ -180,10 +155,9 @@ evidence. The page filters 384 dense office keyframes by visit, object class,
 detector score, and optional VLM audit status; it can show raw images, boxes,
 masks, or both. These boxes are Grounding DINO predictions and the masks are
 SAM 2.1 predictions. They are not hand-drawn annotations and do not establish
-object identity across visits. The older `/lab/changes` route redirects here;
-the Phase 6A research artifacts remain in `outputs/phase6a/`.
+object identity across visits. Cross-visit identity is intentionally not claimed.
 
-Generate the Phase 6B1 artifact on an NVIDIA GPU with:
+Generate the Phase 6.1.1 artifact on an NVIDIA GPU with:
 
 ```powershell
 uv sync --extra cuda
@@ -195,7 +169,7 @@ uv run --extra cuda visual-memory-lab localize-eth-objects `
 ```
 
 The optional 48-frame VLM pseudo-audit and full method are documented in the
-Phase 6B1 guide.
+Phase 6.1.1 guide.
 
 ## Dataset and model citations
 

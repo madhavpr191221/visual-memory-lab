@@ -166,7 +166,7 @@ The system treats sequence IDs as traversal identifiers, not timestamps. See
 [`phases/05_cross_traversal_memory.md`](phases/05_cross_traversal_memory.md) for
 the complete protocol and measured results.
 
-## Phase 6A - Controlled 3D state-change baseline (implemented)
+## Previous geometry experiment (kept locally, not active)
 
 Use the public ETH ASL Change Detection Office dataset to compare four aligned
 real RGB-D/3D observations. The implemented phase adds:
@@ -179,29 +179,26 @@ real RGB-D/3D observations. The implemented phase adds:
 - a strict VLM-supported pseudo-reference over the largest candidates;
 - a failure atlas that exposes fragmentation and reconstruction ambiguity.
 
-The acceptance run produced 917 raw candidate clusters. The VLM reviewed the
-72 largest, marked 53 supported, 15 uncertain, and 4 unsupported, and admitted
-47 medium/high-confidence candidates to the pseudo-reference. These are not
-human ground-truth accuracy measurements. See
-[`phases/06a_controlled_3d_change_baseline.md`](phases/06a_controlled_3d_change_baseline.md).
+The previous geometry experiment is retained locally for historical reference,
+but is not part of the active public project scope.
 
-## Phase 6B - Object-aware change memory (in progress)
+## Phase 6.1 - Object-aware office memory (in progress)
 
 The high-level subphase roadmap is documented in
-[`phases/06_phase6_overview.md`](phases/06_phase6_overview.md).
+[`phases/06_1_overview.md`](phases/06_1_overview.md).
 
-### Phase 6B1 - Frozen RGB object localization (implemented)
+### Current step - Frozen RGB object localization (implemented)
 
 Before associating or training object identities, establish a visible baseline
-that automatically locates movable office objects. Phase 6B1 samples 96
+that automatically locates movable office objects. The current step samples 96
 pose-diverse keyframes per ETH observation, uses frozen Grounding DINO to detect
 chairs, waste bins, and boxes, and uses frozen SAM 2.1 to create masks. The
 Objects UI exposes predictions, confidence filters, masks, model provenance,
 and an optional 48-frame VLM pseudo-audit. It makes no cross-visit identity or
 movement claim. See
-[`phases/06b1_object_localization.md`](phases/06b1_object_localization.md).
+[`phases/06_1_object_localization.md`](phases/06_1_object_localization.md).
 
-Later Phase 6B subphases will establish an honest labelled evaluation slice,
+Later Phase 6.1 steps may establish an honest labelled evaluation slice,
 project verified masks into the shared 3D coordinate frame, associate likely
 object identities across visits, and compare object state. A trained component
 should be introduced only against a measured failure from those baselines,

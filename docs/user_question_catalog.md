@@ -15,10 +15,9 @@ place, and state clearly when the evidence is insufficient.
 | Place retrieval | Available | RGB embeddings and place-zone metadata |
 | Visible scene description | Available with evidence review | Retrieved RGB frames and optional VLM analysis |
 | Earlier-visit retrieval | Available | Visit order, pose, and RGB memory |
-| Coarse geometric change | Available in Phase 6A | Aligned 3D reconstructions |
-| Object localization | Available in Phase 6B1 | Detector boxes and segmentation masks |
-| Object identity across visits | Phase 6B target | Appearance, geometry, and association |
-| Added, removed, or moved objects | Phase 6B target | Identity, visibility, and 3D displacement |
+| Object localization | Available in Phase 6.1.1 | Detector boxes and segmentation masks |
+| Object identity across visits | Phase 6.1 target | Appearance, geometry, and association |
+| Added, removed, or moved objects | Phase 6.1 target | Identity, visibility, and 3D displacement |
 | Long-term object history | Later extension | Persistent object records across visits |
 | Cause, person, and real calendar time | Unsupported | Evidence is absent from the datasets |
 
@@ -26,12 +25,12 @@ The status labels have precise meanings:
 
 - **Available** means the current repository can retrieve or compute the
   evidence, although a VLM answer may still require explicit user approval.
-- **Available in Phase 6B1** means the system can expose frozen-model object
+- **Available in Phase 6.1.1** means the system can expose frozen-model object
   boxes and masks, with confidence and failure evidence but without identity.
-- **Phase 6B target** means the question motivates the next object-aware
+- **Phase 6.1 target** means the question motivates the next object-aware
   research phase; it is not a claim about the current system.
 - **Later extension** means the question requires a longer object history or
-  another capability beyond Phase 6B.
+  another capability beyond Phase 6.1.
 - **Unsupported** means the available recordings cannot establish the answer.
 
 ## 1. Finding places
@@ -121,9 +120,9 @@ calendar timestamp.
 
 ## 4. Asking about coarse 3D change
 
-**Status:** Available in Phase 6A.
+**Status:** This earlier geometry question is not part of the active scope.
 
-Phase 6A compares already aligned ETH Office reconstructions. It finds physical
+The earlier geometry experiment compared aligned ETH Office reconstructions. It found physical
 regions whose reconstructed surfaces do not have a nearby counterpart in the
 other observation.
 
@@ -143,15 +142,15 @@ other observation.
 **Returned evidence:** before-and-after RGB samples, 3D difference plots,
 cluster statistics, and VLM-supported pseudo-reference judgments.
 
-**Boundary:** Phase 6A locates changed geometry. It does not reliably name the
+**Boundary:** This earlier experiment located changed geometry. It did not reliably name the
 responsible object or establish persistent object identity.
 
 ## 5. Locating movable objects
 
-**Status:** Basic 2D localization is available in Phase 6B1. Identity and 3D
-position remain later Phase 6B targets.
+**Status:** Basic 2D localization is available in Phase 6.1.1. Identity and 3D
+position remain later Phase 6.1 targets.
 
-Phase 6B1 concentrates on movable office chairs, waste bins, and boxes.
+The current step concentrates on movable office chairs, waste bins, and boxes.
 Grounding DINO locates an object in an RGB frame; SAM 2.1 separates its pixels
 from the surrounding room.
 
@@ -176,10 +175,10 @@ occlusion, poor lighting, or missing camera coverage remain possible.
 
 ## 6. Establishing object identity across visits
 
-**Status:** Phase 6B target.
+**Status:** Phase 6.1 target.
 
 This is more difficult than category detection. Two images may both contain an
-office chair without showing the same physical chair. Phase 6B will combine
+office chair without showing the same physical chair. Phase 6.1 will combine
 appearance, 3D position, and 3D shape to estimate cross-visit identity.
 
 - Is this the same chair seen during the previous visit?
@@ -219,7 +218,7 @@ identity has been independently verified.
 
 ## 7. Asking whether an object moved
 
-**Status:** Phase 6B target.
+**Status:** Phase 6.1 target.
 
 - Did this chair move between the two visits?
 - Where was this chair during the earlier visit?
@@ -250,7 +249,7 @@ the camera may simply have moved.
 
 ## 8. Asking whether an object was added or removed
 
-**Status:** Phase 6B target.
+**Status:** Phase 6.1 target.
 
 - Which objects appear in the later visit but not the earlier visit?
 - Was a box added to this area?
@@ -276,7 +275,7 @@ responsible system must preserve that distinction.
 ## 9. Supporting inspection and maintenance work
 
 **Status:** some retrieval questions are available now; object-level change
-questions are Phase 6B targets.
+questions are Phase 6.1 targets.
 
 - What changed in this work area since the previous inspection?
 - Which movable items require review?

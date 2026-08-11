@@ -1,13 +1,13 @@
-# Phase 6B1: Automatic Object Localization in Real Office Images
+# Phase 6.1.1: Automatic Object Localization in Real Office Images
 
 ## Objective
 
-Phase 6A found regions where two aligned 3D office scans disagree. That was
+Earlier experiments showed that a geometric difference is not an object. That
 useful, but a geometric cluster is not an object: it cannot tell us whether a
 changed region is a chair, a waste bin, a box, incomplete scan coverage, or a
 reconstruction artifact.
 
-Phase 6B1 adds the missing RGB object-localization layer. It asks a narrower,
+Phase 6.1.1 adds the missing RGB object-localization layer. It asks a narrower,
 testable question:
 
 > In each office image, where does a frozen vision model predict a chair, a
@@ -25,7 +25,7 @@ system records many overlapping views. Before it can answer, “Where was this
 chair last seen?” or “Was this waste bin moved?”, it first needs to find those
 objects in each frame.
 
-Phase 6B1 performs that first perception step:
+Phase 6.1.1 performs that first perception step:
 
 ```text
 RGB inspection frames
@@ -51,8 +51,7 @@ four logically ordered office observations. Each RGB message has an exactly
 timestamp-aligned camera pose `T_G_C`.
 
 The pipeline selects 96 keyframes from each observation, for 384 frames total.
-This is much denser than the eight-frame VLM sample used for the Phase 6A scan
-audit. The dense set is used for localization. A smaller, independent sample of
+The dense set is used for localization. A smaller, independent sample of
 12 frames per observation—48 frames total—is used only for the optional VLM
 pseudo-audit.
 
@@ -62,7 +61,7 @@ Tuesday.”
 
 ### Boundary: depth comes later
 
-Phase 6B1 is an RGB-only object-localization baseline. It does not use depth to
+Phase 6.1.1 is an RGB-only object-localization baseline. It does not use depth to
 build 3D object clouds or to decide whether an object moved. The recorded camera
 pose is retained as metadata and for viewpoint-aware keyframe selection.
 
@@ -230,7 +229,7 @@ boundary are recorded in
 ## VLM pseudo-audit
 
 The ETH dataset does not provide object boxes or masks for these target classes,
-so Phase 6B1 cannot report genuine detector precision or recall. Instead, an
+so Phase 6.1.1 cannot report genuine detector precision or recall. Instead, an
 optional VLM reviews a fixed sample of 12 frames from every observation. It sees
 both the raw image and model-rendered overlay and must:
 
@@ -266,9 +265,9 @@ presentation as the main Phase 6 view. It provides:
   clear unavailable status and an explicit ground-truth boundary;
 - expandable model and threshold details.
 
-The UI draws boxes from model output. They are not manually curated. The older
-Phase 6A research endpoint remains available to the backend, but `/lab/changes`
-redirects to `/lab/objects`.
+The UI draws boxes from model output. They are not manually curated. Existing
+research endpoints remain unchanged while the public documentation focuses on
+this object-localization step.
 
 ## How to run
 
@@ -335,7 +334,7 @@ uv run --extra cpu python -m pytest -q
 
 ## What this phase proves—and does not prove
 
-Phase 6B1 proves that the project can turn dense, pose-linked real-office RGB
+Phase 6.1.1 proves that the project can turn dense, pose-linked real-office RGB
 observations into automatically localized, inspectable object evidence using
 frozen modern vision models.
 

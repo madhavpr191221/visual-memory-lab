@@ -1,4 +1,4 @@
-# Phase 6: Object-Aware Physical Change Memory
+# Phase 6.1: Object-Aware Office Memory
 
 ## Purpose
 
@@ -47,7 +47,7 @@ This document is a high-level roadmap. Detailed mathematics, implementation
 notes, commands, and measured results belong in the individual subphase
 documents. Completed sections will be filled in as the project progresses.
 
-## Phase 6A — Coarse 3D change baseline
+## Active scope (object memory)
 
 ### Question
 
@@ -55,7 +55,12 @@ Where do two real office reconstructions disagree geometrically?
 
 ### What it does
 
-Phase 6A compares aligned ETH Office observations and identifies regions where
+The active roadmap begins with visible RGB objects. Depth, 3D placement, and
+cross-visit change reasoning remain future work and will be added only for a
+concrete technician question. The earlier geometry experiment is not part of
+the active public scope.
+
+The previous experiment compared aligned ETH Office observations and identified regions where
 surfaces appear in one observation but not the other. It uses RGB-D-derived
 reconstructions, aligned coordinates, distance thresholds, clustering, and a
 VLM-assisted pseudo-review.
@@ -69,7 +74,7 @@ reliably say “the chair moved.”
 ### Status
 
 Implemented. The detailed record is
-[Phase 6A: Controlled 3D State-Change Baseline](06a_controlled_3d_change_baseline.md).
+This older diagnostic record is retained locally, but is no longer tracked.
 
 ### Results to record
 
@@ -80,7 +85,7 @@ Main failure modes:             reconstruction fragments, viewpoint coverage,
                                 and unnamed changed objects
 ```
 
-## Phase 6B1 — RGB object localization
+## Phase 6.1.1 — RGB object localization
 
 ### Question
 
@@ -88,7 +93,7 @@ Where are likely chairs, waste bins, and boxes in the office images?
 
 ### What it does
 
-Phase 6B1 processes dense RGB keyframes with frozen Grounding DINO detection
+Phase 6.1.1 processes dense RGB keyframes with frozen Grounding DINO detection
 and SAM 2.1 segmentation. The Objects UI shows raw images, predicted boxes,
 masks, confidence scores, and optional VLM pseudo-audit judgments.
 
@@ -103,7 +108,7 @@ It cannot yet answer whether two chair detections are the same physical chair.
 ### Status
 
 Implemented. See
-[Phase 6B1: Automatic Object Localization](06b1_object_localization.md).
+[Phase 6.1.1: Automatic Object Localization](06_1_object_localization.md).
 
 ### Results
 
@@ -111,7 +116,7 @@ The current acceptance artifact contains 384 keyframes and 1,417 retained
 predictions. The complete measured counts are kept in
 [`artifacts/phase6b1/summary.json`](../../artifacts/phase6b1/summary.json).
 
-## Phase 6B2 — RGB-D object evidence
+## Phase 6.1.2 — RGB-D object evidence
 
 ### Question
 
@@ -148,7 +153,7 @@ Valid masked-depth rate:         [fill]
 Failure cases:                   [fill]
 ```
 
-## Phase 6B3 — Cross-visit object association
+## Phase 6.1.3 — Cross-visit object association
 
 ### Question
 
@@ -188,7 +193,7 @@ Identity-confusion cases:       [fill]
 Coverage-related failures:      [fill]
 ```
 
-## Phase 6B4 — Object state and change reasoning
+## Phase 6.1.4 — Object state and change reasoning
 
 ### Question
 
@@ -226,7 +231,7 @@ Uncertainty calibration:        [fill]
 Main false-change categories:   [fill]
 ```
 
-## Phase 6B5 — Learned improvement
+## Phase 6.1.5 — Learned improvement
 
 ### Question
 
@@ -275,7 +280,7 @@ Each subphase should have a corresponding inspection view:
 | Subphase | UI evidence |
 | --- | --- |
 | 6A | RGB visit comparison and coarse 3D difference regions |
-| 6B1 | RGB images, detector boxes, segmentation masks, confidence and audit status |
+| 6.1.1 | RGB images, detector boxes, segmentation masks, confidence and audit status |
 | 6B2 | RGB masks beside partial 3D object evidence |
 | 6B3 | Earlier/later object pair with match explanation |
 | 6B4 | One change outcome with before/after RGB and 3D evidence |

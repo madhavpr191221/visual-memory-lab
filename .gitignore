@@ -24,3 +24,6 @@ outputs/*
 web/node_modules/
 web/dist/
 web/*.tsbuildinfo
+# Retained locally for reference, but not part of the active public scope.
+/docs/phases/06a_controlled_3d_change_baseline.md
+/artifacts/phase6a/

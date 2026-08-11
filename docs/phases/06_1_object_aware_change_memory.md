@@ -1,8 +1,8 @@
-# Phase 6B: Object-Aware Change Memory
+# Phase 6.1: Object-Aware Change Memory
 
 ## The idea in one sentence
 
-Phase 6B is about helping a technician remember **physical objects**, not just
+Phase 6.1 is about helping a technician remember **physical objects**, not just
 similar-looking images.
 
 For example:
@@ -18,7 +18,7 @@ To answer that responsibly, the system needs to know:
 4. whether observations from two visits may refer to the same object;
 5. whether the evidence is strong enough to describe a change.
 
-The project is building these capabilities in stages. Phase 6B1 implements the
+The project is building these capabilities in stages. Phase 6.1.1 implements the
 first two for real office images. The later stages are the research plan, not
 completed results.
 
@@ -55,9 +55,9 @@ claim.
 
 ## What is implemented now?
 
-### Phase 6B1: RGB object localization
+### Phase 6.1.1: RGB object localization
 
-Phase 6B1 processes 384 selected ETH Office RGB frames. For each frame:
+Phase 6.1.1 processes 384 selected ETH Office RGB frames. For each frame:
 
 - Grounding DINO predicts chairs, waste bins, and boxes;
 - SAM 2.1 predicts the pixels belonging to each predicted object;
@@ -76,7 +76,7 @@ segmentation mask: 3.5% of the image
 This says “the model sees something that may be a chair here.” It does not yet
 say “this is the same chair seen in Visit 1.”
 
-### Later Phase 6B stages
+### Later Phase 6.1 stages
 
 The planned progression is:
 
@@ -498,8 +498,8 @@ Example:
 
 ## What is and is not claimed
 
-Phase 6B1 currently provides automatic RGB boxes and masks. Phase 6A provides
-aligned geometric change regions. The full object-aware interpretation remains
+Phase 6.1.1 currently provides automatic RGB boxes and masks. The full
+object-aware interpretation remains
 future work.
 
 The project does not currently claim:
