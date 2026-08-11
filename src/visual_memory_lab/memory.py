@@ -95,33 +95,62 @@ def _write_records(path: Path, records: Sequence[dict[str, object]]) -> None:
 
 def _source_files(
     source: Path,
+    manifest: dict[str, object],
     records: Sequence[dict[str, object]],
-) -> list[Path]:
-    files = [source / "run.json", source / "observations.jsonl"]
+) -> tuple[list[tuple[str, Path]], Path]:
+    image_root_value = manifest.get("image_root", ".")
+    if not isinstance(image_root_value, str):
+        raise ValueError("run.json image_root must be a string")
+    image_root = (source / image_root_value).resolve()
+    files = [
+        ("run.json", source / "run.json"),
+        ("observations.jsonl", source / "observations.jsonl"),
+    ]
     for record in records:
         image_path = record.get("image_path")
         if not isinstance(image_path, str):
             raise ValueError("every observation must contain a string image_path")
-        files.append(source / image_path)
-    missing = [path for path in files if not path.is_file()]
+        files.append((f"image:{Path(image_path).as_posix()}", image_root / image_path))
+    missing = [path for _, path in files if not path.is_file()]
     if missing:
         raise ValueError(f"source artifact is missing {missing[0]}")
-    return files
+    return files, image_root
 
 
-def _corpus_fingerprint(source: Path, files: Sequence[Path]) -> str:
+def _corpus_fingerprint(files: Sequence[tuple[str, Path]]) -> str:
     digest = hashlib.sha256()
-    for path in files:
-        relative = path.relative_to(source).as_posix().encode("utf-8")
-        digest.update(len(relative).to_bytes(8, "big"))
-        digest.update(relative)
+    for label, path in files:
+        encoded_label = label.encode("utf-8")
+        digest.update(len(encoded_label).to_bytes(8, "big"))
+        digest.update(encoded_label)
         data = path.read_bytes()
         digest.update(len(data).to_bytes(8, "big"))
         digest.update(data)
     return digest.hexdigest()
 
 
-def _validate_source(source: Path) -> tuple[dict[str, object], list[dict[str, object]], str]:
+def _image_contract(manifest: dict[str, object]) -> tuple[tuple[int, int], str]:
+    image = manifest.get("image")
+    if isinstance(image, dict):
+        return (
+            (int(image.get("width", -1)), int(image.get("height", -1))),
+            str(image.get("mode", "")),
+        )
+    agent_view = manifest.get("agent_view")
+    if isinstance(agent_view, dict):
+        return (
+            (
+                int(agent_view.get("image_width", -1)),
+                int(agent_view.get("image_height", -1)),
+            ),
+            "RGB",
+        )
+    raise ValueError("run.json is missing an image or agent_view contract")
+
+
+def _validate_source(
+    source: Path,
+) -> tuple[dict[str, object], list[dict[str, object]], str, Path]:
     manifest = _read_json(source / "run.json")
     records = _read_records(source / "observations.jsonl")
     expected = manifest.get("observation_count")
@@ -132,19 +161,15 @@ def _validate_source(source: Path) -> tuple[dict[str, object], list[dict[str, ob
     ids = [record.get("observation_id") for record in records]
     if any(not isinstance(value, str) for value in ids) or len(set(ids)) != len(ids):
         raise ValueError("observation IDs must be unique strings")
-    files = _source_files(source, records)
-    agent_view = manifest.get("agent_view")
-    if not isinstance(agent_view, dict):
-        raise ValueError("run.json is missing the agent_view contract")
-    expected_size = (
-        int(agent_view.get("image_width", -1)),
-        int(agent_view.get("image_height", -1)),
-    )
-    for frame_path in files[2:]:
+    files, image_root = _source_files(source, manifest, records)
+    expected_size, expected_mode = _image_contract(manifest)
+    if expected_size[0] < 1 or expected_size[1] < 1 or expected_mode != "RGB":
+        raise ValueError("image contract must describe positive-size RGB frames")
+    for _, frame_path in files[2:]:
         try:
             with Image.open(frame_path) as image:
                 image.load()
-                if image.mode != "RGB" or image.size != expected_size:
+                if image.mode != expected_mode or image.size != expected_size:
                     raise ValueError(
                         f"expected an RGB frame of size {expected_size}, got "
                         f"{image.mode} {image.size} at {frame_path}"
@@ -153,7 +178,7 @@ def _validate_source(source: Path) -> tuple[dict[str, object], list[dict[str, ob
             raise ValueError(
                 f"could not read trajectory frame {frame_path}: {error}"
             ) from error
-    return manifest, records, _corpus_fingerprint(source, files)
+    return manifest, records, _corpus_fingerprint(files), image_root
 
 
 def _validate_embeddings(
@@ -194,8 +219,8 @@ def build_index(
     if output.exists() and (not output.is_dir() or any(output.iterdir())):
         raise FileExistsError(f"output path is not empty: {output}")
 
-    _, records, fingerprint = _validate_source(source)
-    image_paths = [source / str(record["image_path"]) for record in records]
+    _, records, fingerprint, image_root = _validate_source(source)
+    image_paths = [image_root / str(record["image_path"]) for record in records]
     batches = [
         encoder.encode_images(image_paths[start : start + batch_size])
         for start in range(0, len(image_paths), batch_size)
@@ -257,20 +282,24 @@ class MemoryIndex:
         records: list[dict[str, object]],
         embeddings: np.ndarray,
         source: Path,
+        image_root: Path,
     ) -> None:
         self.root = root
         self.manifest = manifest
         self.records = records
         self.embeddings = embeddings
         self.source = source
+        self.image_root = image_root
         self._record_by_id = {
             str(record["observation_id"]): index
             for index, record in enumerate(records)
         }
-        self._record_by_step = {
-            (str(record["episode_id"]), int(record["step"])): record
-            for record in records
-        }
+        self._record_by_step = {}
+        for record in records:
+            if "episode_id" in record and "step" in record:
+                self._record_by_step[
+                    (str(record["episode_id"]), int(record["step"]))
+                ] = record
 
     @classmethod
     def load(cls, root: Path, *, verify_source: bool = True) -> MemoryIndex:
@@ -313,17 +342,24 @@ class MemoryIndex:
             raise ValueError("index record count does not match its manifest")
 
         if verify_source:
-            _, source_records, fingerprint = _validate_source(source)
+            _, source_records, fingerprint, image_root = _validate_source(source)
             if source_records != records:
                 raise ValueError("indexed observation metadata no longer matches the source")
             if fingerprint != source_info.get("fingerprint_sha256"):
                 raise ValueError("source trajectory has changed since the index was built")
+        else:
+            source_manifest = _read_json(source / "run.json")
+            image_root_value = source_manifest.get("image_root", ".")
+            if not isinstance(image_root_value, str):
+                raise ValueError("run.json image_root must be a string")
+            image_root = (source / image_root_value).resolve()
         return cls(
             root=root,
             manifest=manifest,
             records=records,
             embeddings=embeddings,
             source=source,
+            image_root=image_root,
         )
 
     @property
@@ -345,6 +381,12 @@ class MemoryIndex:
             raise ValueError(f"unknown observation ID: {observation_id}") from error
 
     def _nearby_actions(self, record: dict[str, object]) -> tuple[dict[str, object], ...]:
+        if (
+            "episode_id" not in record
+            or "step" not in record
+            or "action" not in record
+        ):
+            return ()
         episode_id = str(record["episode_id"])
         step = int(record["step"])
         nearby: list[dict[str, object]] = []
@@ -402,7 +444,7 @@ class MemoryIndex:
                 rank=rank,
                 score=float(np.clip(score, -1.0, 1.0)),
                 observation=self.records[index],
-                image_path=self.source / str(self.records[index]["image_path"]),
+                image_path=self.image_root / str(self.records[index]["image_path"]),
                 nearby_actions=self._nearby_actions(self.records[index]),
             )
             for rank, (index, score) in enumerate(ranked, start=1)

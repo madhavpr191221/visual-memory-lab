@@ -1,14 +1,17 @@
 [project]
 name = "visual-memory-lab"
-version = "0.2.0"
-description = "A simulator-based research lab for task-relevant visual memory."
+version = "0.3.0"
+description = "A research lab for task-relevant visual memory in simulated and real scenes."
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "gymnasium>=1.2.3,<2",
     "minigrid>=3.1.0,<4",
     "numpy>=2.5.2",
+    "openai>=2,<3",
     "pillow>=12.3.0,<13",
+    "pydantic>=2,<3",
+    "python-dotenv>=1,<2",
     "torch>=2.7,<3",
     "transformers>=5.9,<6",
 ]

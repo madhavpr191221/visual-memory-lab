@@ -9,6 +9,11 @@ wheels/
 # Virtual environments
 .venv
 
+# Local credentials
+.env
+.env.*
+!.env.example
+
 # Generated trajectories and local outputs
 data/*
 !data/.gitkeep

@@ -22,7 +22,7 @@ def _positive_integer(value: str) -> int:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="visual-memory-lab",
-        description="Generate and inspect simulator-based visual memories.",
+        description="Build and evaluate simulator or real-image visual memories.",
     )
     parser.add_argument("--version", action="version", version=__version__)
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -59,6 +59,33 @@ def build_parser() -> argparse.ArgumentParser:
     query.add_argument("--include-self", action="store_true")
     query.add_argument("--device", default="auto")
     query.add_argument("--json", action="store_true")
+
+    prepare = subparsers.add_parser(
+        "prepare-7-scenes",
+        help="validate 7-Scenes Office and write official train/test manifests",
+    )
+    prepare.add_argument("--input", type=Path, required=True)
+    prepare.add_argument("--output", type=Path, required=True)
+
+    zones = subparsers.add_parser(
+        "label-zones",
+        help="curate cached VLM-assisted place zones from a training manifest",
+    )
+    zones.add_argument("--input", type=Path, required=True)
+    zones.add_argument("--output", type=Path, required=True)
+    zones.add_argument("--cache-dir", type=Path, default=Path("outputs/phase3/vlm-cache"))
+    zones.add_argument("--model", default="gpt-5.6-terra")
+
+    evaluate = subparsers.add_parser(
+        "evaluate-real-memory",
+        help="evaluate held-out pose retrieval and frozen semantic place zones",
+    )
+    evaluate.add_argument("--memory-index", type=Path, required=True)
+    evaluate.add_argument("--query-index", type=Path, required=True)
+    evaluate.add_argument("--zones", type=Path, required=True)
+    evaluate.add_argument("--output", type=Path, required=True)
+    evaluate.add_argument("--device", default="auto")
+    evaluate.add_argument("--seed", type=int, default=42)
     return parser
 
 
@@ -121,21 +148,31 @@ def _print_query(payload: dict[str, object]) -> None:
         assert isinstance(result, dict)
         observation = result["observation"]
         assert isinstance(observation, dict)
-        visible_objects = observation.get("visible_objects", [])
-        visible_ids = ", ".join(
-            str(item["object_id"])
-            for item in visible_objects
-            if isinstance(item, dict) and "object_id" in item
-        ) or "none"
+        if "agent_position" in observation:
+            visible_objects = observation.get("visible_objects", [])
+            visible_ids = ", ".join(
+                str(item["object_id"])
+                for item in visible_objects
+                if isinstance(item, dict) and "object_id" in item
+            ) or "none"
+            context = (
+                f'pose={observation["agent_position"]} '
+                f'direction={observation["agent_direction_name"]} visible={visible_ids}'
+            )
+        else:
+            pose = observation.get("camera_pose", {})
+            translation = pose.get("translation_m") if isinstance(pose, dict) else None
+            context = (
+                f'sequence={observation.get("sequence_id", observation.get("episode_id"))} '
+                f'frame={observation.get("step")} translation_m={translation}'
+            )
         print(
             f'{result["rank"]}. {observation["observation_id"]} '
-            f'score={float(result["score"]):.4f} '
-            f'pose={observation["agent_position"]} '
-            f'direction={observation["agent_direction_name"]} '
-            f'visible={visible_ids}'
+            f'score={float(result["score"]):.4f} {context}'
         )
         print(f'   image: {result["image_path"]}')
-        print(f'   nearby actions: {result["nearby_actions"]}')
+        if result["nearby_actions"]:
+            print(f'   nearby actions: {result["nearby_actions"]}')
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -189,4 +226,52 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(json.dumps(payload, indent=2, sort_keys=True))
         else:
             _print_query(payload)
+    elif args.command == "prepare-7-scenes":
+        from visual_memory_lab.seven_scenes import prepare_office_dataset
+
+        try:
+            summary = prepare_office_dataset(dataset_root=args.input, output=args.output)
+        except (FileExistsError, OSError, ValueError) as error:
+            parser.error(str(error))
+        print(
+            f"Prepared {summary.train_count} train and {summary.test_count} test "
+            f"RGB observations in {summary.output}; depth was not used"
+        )
+    elif args.command == "label-zones":
+        from visual_memory_lab.zone_labeling import label_zones
+
+        try:
+            artifact = label_zones(
+                source=args.input,
+                output=args.output,
+                cache_dir=args.cache_dir,
+                model=args.model,
+            )
+        except (FileExistsError, OSError, RuntimeError, ValueError) as error:
+            parser.error(str(error))
+        print(
+            f"Curated {len(artifact['zones'])} place zones in {args.output.resolve()}"
+        )
+    elif args.command == "evaluate-real-memory":
+        from visual_memory_lab.encoder import ClipEncoder
+        from visual_memory_lab.evaluation import write_evaluation
+
+        try:
+            memory = MemoryIndex.load(args.memory_index)
+            queries = MemoryIndex.load(args.query_index)
+            encoder = ClipEncoder(device=args.device)
+            metrics = write_evaluation(
+                memory=memory,
+                queries=queries,
+                zones_path=args.zones,
+                encoder=encoder,
+                output=args.output,
+                seed=args.seed,
+            )
+        except (FileExistsError, OSError, ValueError) as error:
+            parser.error(str(error))
+        print(
+            f"Evaluated {metrics['pose']['query_count']} image queries and "
+            f"{metrics['text_zones']['prompt_count']} text queries in {args.output.resolve()}"
+        )
     return 0
