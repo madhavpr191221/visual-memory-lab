@@ -166,3 +166,85 @@ export interface Phase6aShowcase {
   pairs: ChangePair[];
   cases: ChangeCase[];
 }
+
+export type ObjectClass = "chair" | "waste_bin" | "box";
+export type ObjectAuditStatus = "supported" | "uncertain" | "unsupported" | "unreviewed";
+
+export interface ObjectDetectionAudit {
+  detection_id: string;
+  verdict: Exclude<ObjectAuditStatus, "unreviewed">;
+  category_correct: "yes" | "no" | "uncertain";
+  mask_quality: "good" | "partial" | "excessive" | "uncertain";
+  explanation: string;
+}
+
+export interface ObjectDetection {
+  detection_id: string;
+  frame_id: string;
+  canonical_class: ObjectClass;
+  phrase: string;
+  score: number;
+  box_xyxy: [number, number, number, number];
+  box_normalized: [number, number, number, number];
+  mask_url: string;
+  mask_score: number;
+  mask_area_fraction: number;
+  warnings: string[];
+  audit: ObjectDetectionAudit | null;
+  audit_status: ObjectAuditStatus;
+}
+
+export interface ObjectFrame {
+  frame_id: string;
+  observation: number;
+  message_index: number;
+  timestamp_ns: number;
+  width: number;
+  height: number;
+  pose: {
+    frame: "T_G_C";
+    translation_m: [number, number, number];
+    quaternion_xyzw: [number, number, number, number];
+  };
+  image_url: string;
+  overlay_url: string;
+  detections: ObjectDetection[];
+  audit_status: "reviewed" | "unreviewed";
+  missed_visible_classes: ObjectClass[];
+  audit_limitations: string[];
+}
+
+export interface ObjectAuditSummary {
+  frame_count: number;
+  reviewed_detection_count: number;
+  verdict_counts: Record<string, number>;
+  mask_quality_counts: Record<string, number>;
+  missed_visible_class_counts: Record<string, number>;
+  high_confidence_pseudo_support_rate: number | null;
+  claim_boundary: string;
+  model_requested: string;
+  response_models: string[];
+}
+
+export interface Phase6b1Showcase {
+  dataset: string;
+  claim_boundary: string;
+  metrics: {
+    frame_count: number;
+    detection_count: number;
+    frames_with_detections: number;
+    empty_frame_count: number;
+    class_counts: Record<ObjectClass, number>;
+    frames_per_observation: Record<string, number>;
+  };
+  method: {
+    prompt: string;
+    box_threshold: number;
+    text_threshold: number;
+    nms_iou: number;
+    detector: Record<string, unknown>;
+    segmenter: Record<string, unknown>;
+  };
+  audit: ObjectAuditSummary | null;
+  frames: ObjectFrame[];
+}

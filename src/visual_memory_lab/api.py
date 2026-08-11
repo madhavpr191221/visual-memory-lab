@@ -19,6 +19,7 @@ from pydantic import ValidationError
 
 from visual_memory_lab import __version__
 from visual_memory_lab.change_showcase import ChangeShowcase
+from visual_memory_lab.object_showcase import ObjectShowcase
 from visual_memory_lab.api_models import (
     AnalysisRequest,
     AnalysisResponse,
@@ -53,6 +54,8 @@ class AppConfig:
     change_audit: Path = Path("outputs/phase6a/office-audit")
     change_baseline: Path = Path("outputs/phase6a/change-baseline")
     change_review: Path = Path("outputs/phase6a/vlm-review")
+    object_localization: Path = Path("outputs/phase6b1/object-localization")
+    object_audit: Path = Path("outputs/phase6b1/vlm-audit")
 
 
 @dataclass
@@ -62,6 +65,7 @@ class AppResources:
     queries: MemoryStore
     analysis: object | None = None
     changes: ChangeShowcase | None = None
+    objects: ObjectShowcase | None = None
 
 
 def load_resources(config: AppConfig) -> AppResources:
@@ -94,12 +98,21 @@ def load_resources(config: AppConfig) -> AppResources:
         )
     except FileNotFoundError:
         pass
+    objects = None
+    try:
+        objects = ObjectShowcase.load(
+            localization=config.object_localization,
+            audit=config.object_audit,
+        )
+    except FileNotFoundError:
+        pass
     return AppResources(
         service=service,
         memory=memory,
         queries=queries,
         analysis=analysis,
         changes=changes,
+        objects=objects,
     )
 
 
@@ -284,6 +297,29 @@ def create_app(
             raise HTTPException(status_code=404, detail="Phase 6A artifacts are unavailable")
         try:
             path = changes.image_path(image_id)
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        return FileResponse(path, content_disposition_type="inline")
+
+    @app.get("/api/phase6b1")
+    def phase6b1() -> dict[str, object]:
+        objects = current().objects
+        if objects is None:
+            raise HTTPException(
+                status_code=404,
+                detail=(
+                    "Phase 6B1 artifacts are unavailable; run localize-eth-objects first"
+                ),
+            )
+        return objects.payload
+
+    @app.get("/api/phase6b1/images/{image_id}")
+    def phase6b1_image(image_id: str) -> FileResponse:
+        objects = current().objects
+        if objects is None:
+            raise HTTPException(status_code=404, detail="Phase 6B1 artifacts are unavailable")
+        try:
+            path = objects.image_path(image_id)
         except KeyError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
         return FileResponse(path, content_disposition_type="inline")

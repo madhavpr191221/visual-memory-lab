@@ -19,9 +19,37 @@ dependencies = [
     "rosbags>=0.11.3",
     "scipy>=1.18.0",
     "torch>=2.7,<3",
+    "torchvision>=0.28,<0.29",
     "transformers>=5.9,<6",
     "uvicorn>=0.52.1",
 ]
+
+[project.optional-dependencies]
+cpu = ["torch>=2.7,<3", "torchvision>=0.28,<0.29"]
+cuda = ["torch>=2.7,<3", "torchvision>=0.28,<0.29"]
+
+[tool.uv]
+conflicts = [[{ extra = "cpu" }, { extra = "cuda" }]]
+
+[tool.uv.sources]
+torch = [
+    { index = "pytorch-cpu", extra = "cpu" },
+    { index = "pytorch-cu130", extra = "cuda" },
+]
+torchvision = [
+    { index = "pytorch-cpu", extra = "cpu" },
+    { index = "pytorch-cu130", extra = "cuda" },
+]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-cu130"
+url = "https://download.pytorch.org/whl/cu130"
+explicit = true
 
 [project.scripts]
 visual-memory-lab = "visual_memory_lab.cli:main"

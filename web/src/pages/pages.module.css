@@ -174,3 +174,55 @@
   .simpleStats { grid-template-columns: 1fr; }
   .limitNote { display: grid; }
 }
+
+.objectHero { max-width: 900px; }
+.objectHero p { max-width: 800px; color: var(--muted); line-height: 1.7; }
+.objectBoundary { display: flex; gap: 14px; align-items: baseline; margin: 18px 0 24px; padding: 16px 19px; border-left: 4px solid var(--blue); border-radius: 0 13px 13px 0; background: var(--blue-soft); }
+.objectBoundary span { color: var(--muted); line-height: 1.55; }
+.objectMetrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(145px, 1fr)); gap: 11px; margin-bottom: 24px; }
+.objectMetric { padding: 17px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); }
+.objectMetric span { display: block; min-height: 30px; color: var(--muted); font-size: 11px; line-height: 1.35; }
+.objectMetric strong { display: block; margin-top: 6px; font-family: var(--serif); font-size: 27px; }
+.objectControls { display: grid; grid-template-columns: repeat(3, minmax(150px, .7fr)) minmax(240px, 1.4fr); gap: 14px; align-items: end; padding: 18px; }
+.objectControls label { display: grid; gap: 7px; color: var(--muted); font-size: 11px; font-weight: 800; }
+.objectControls select { width: 100%; padding: 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); color: var(--ink); }
+.scoreControl strong { color: var(--ink); }
+.scoreControl input { width: 100%; accent-color: var(--blue); }
+.objectInspector { margin-top: 38px; }
+.displayTabs { display: flex; gap: 8px; margin: 10px 0 13px; }
+.displayTabs button { padding: 8px 12px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); color: var(--muted); text-transform: capitalize; font-weight: 750; }
+.displayTabs .selectedTab { border-color: var(--blue); background: var(--blue); color: white; }
+.objectDetail { display: grid; grid-template-columns: minmax(520px, 1.3fr) minmax(270px, .7fr); gap: 22px; padding: 18px; }
+.objectImageStage { position: relative; display: block; align-self: start; overflow: hidden; border-radius: 13px; background: #101512; }
+.objectImageStage > img:first-child { display: block; width: 100%; aspect-ratio: 16/9; object-fit: contain; }
+.objectMask { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; pointer-events: none; }
+.objectBox { position: absolute; border: 3px solid currentColor; border-radius: 5px; box-shadow: 0 0 0 1px rgba(255,255,255,.7); pointer-events: none; }
+.objectBox em { position: absolute; left: -3px; top: -24px; padding: 4px 6px; border-radius: 5px 5px 5px 0; background: currentColor; color: white; font-size: 10px; font-style: normal; font-weight: 850; white-space: nowrap; }
+.chair { color: #1f6feb; }
+.waste_bin { color: #0e915c; }
+.box { color: #df7c1e; }
+.objectDetails { display: grid; gap: 10px; align-content: start; max-height: 540px; overflow: auto; }
+.detectionDetail { padding: 13px; border: 1px solid var(--line); border-radius: 11px; background: var(--surface-2); }
+.detectionDetail > div { display: flex; justify-content: space-between; gap: 10px; text-transform: capitalize; }
+.detectionDetail p { margin: 8px 0 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
+.detectionDetail small { display: block; margin-top: 6px; color: var(--muted); }
+.auditBadge { padding: 3px 6px; border-radius: 6px; font-size: 9px; text-transform: uppercase; }
+.unreviewed { color: #56615a; background: #e7e8e3; }
+.missedWarning { padding: 10px 12px; border-radius: 9px; background: var(--amber-soft); color: #704e13 !important; }
+.objectGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(205px, 1fr)); gap: 12px; }
+.objectCard { overflow: hidden; padding: 0; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); color: var(--ink); text-align: left; }
+.objectCard:hover, .selectedObjectCard { border-color: var(--blue); box-shadow: 0 7px 20px rgba(36, 70, 92, .12); }
+.objectCard img { display: block; width: 100%; aspect-ratio: 16/9; object-fit: cover; }
+.objectCard span { display: grid; gap: 4px; padding: 10px 11px; }
+.objectCard small { color: var(--muted); }
+.loadMore { display: block; margin: 20px auto 0; padding: 10px 16px; border: 1px solid var(--blue); border-radius: 10px; background: var(--surface); color: var(--blue); font-weight: 800; }
+.failureSummary { display: grid; grid-template-columns: repeat(4, minmax(130px, 1fr)); gap: 11px; }
+.auditBoundary { padding: 14px 16px; border-radius: 10px; background: var(--surface-2); color: var(--muted); line-height: 1.55; }
+@media (max-width: 980px) {
+  .objectControls, .objectDetail { grid-template-columns: 1fr 1fr; }
+  .objectDetail .objectImageStage { grid-column: 1 / -1; }
+}
+@media (max-width: 650px) {
+  .objectControls, .objectDetail, .failureSummary { grid-template-columns: 1fr; }
+  .objectBoundary { display: grid; }
+}

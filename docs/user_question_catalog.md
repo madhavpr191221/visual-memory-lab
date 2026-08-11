@@ -16,7 +16,7 @@ place, and state clearly when the evidence is insufficient.
 | Visible scene description | Available with evidence review | Retrieved RGB frames and optional VLM analysis |
 | Earlier-visit retrieval | Available | Visit order, pose, and RGB memory |
 | Coarse geometric change | Available in Phase 6A | Aligned 3D reconstructions |
-| Object localization | Phase 6B target | Detector and segmentation masks |
+| Object localization | Available in Phase 6B1 | Detector boxes and segmentation masks |
 | Object identity across visits | Phase 6B target | Appearance, geometry, and association |
 | Added, removed, or moved objects | Phase 6B target | Identity, visibility, and 3D displacement |
 | Long-term object history | Later extension | Persistent object records across visits |
@@ -26,6 +26,8 @@ The status labels have precise meanings:
 
 - **Available** means the current repository can retrieve or compute the
   evidence, although a VLM answer may still require explicit user approval.
+- **Available in Phase 6B1** means the system can expose frozen-model object
+  boxes and masks, with confidence and failure evidence but without identity.
 - **Phase 6B target** means the question motivates the next object-aware
   research phase; it is not a claim about the current system.
 - **Later extension** means the question requires a longer object history or
@@ -146,30 +148,28 @@ responsible object or establish persistent object identity.
 
 ## 5. Locating movable objects
 
-**Status:** Phase 6B target.
+**Status:** Basic 2D localization is available in Phase 6B1. Identity and 3D
+position remain later Phase 6B targets.
 
-Phase 6B will initially concentrate on movable office chairs, waste bins, and
-boxes. Detection will locate an object in an RGB frame; segmentation will
-separate its pixels from the surrounding room.
+Phase 6B1 concentrates on movable office chairs, waste bins, and boxes.
+Grounding DINO locates an object in an RGB frame; SAM 2.1 separates its pixels
+from the surrounding room.
 
 - Where is the black office chair?
 - Where is the waste bin?
 - Where is the cardboard box?
 - Show every observation containing an office chair.
-- Show every view of this waste bin.
+- Show every frame with a predicted waste bin.
 - Which visit contains this box?
-- Which workstation is this chair closest to?
-- Is the chair beside the desk or beside the window?
-- What is the estimated 3D position of this object?
-- Which detections from this visit belong to one physical object?
 - Which image provides the clearest view of the object?
 - Is the object partially occluded?
 - Was the object detected confidently?
 - Which object classes were searched for but not detected?
 
-**Expected evidence:** model-generated boxes and masks, confidence scores,
-frame identifiers, depth support, and an object location in the shared 3D
-coordinate system.
+**Available evidence:** model-generated boxes and masks, confidence scores,
+frame identifiers, camera pose, and the optional VLM pseudo-audit. Questions
+about the same physical object, nearest workstation, or 3D position require
+later association and RGB-D projection work.
 
 **Boundary:** a missing detection does not prove absence. Detector failure,
 occlusion, poor lighting, or missing camera coverage remain possible.

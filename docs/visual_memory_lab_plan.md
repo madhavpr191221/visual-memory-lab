@@ -185,12 +185,27 @@ The acceptance run produced 917 raw candidate clusters. The VLM reviewed the
 human ground-truth accuracy measurements. See
 [`phases/06a_controlled_3d_change_baseline.md`](phases/06a_controlled_3d_change_baseline.md).
 
-## Phase 6B - Learned improvement for a measured change failure
+## Phase 6B - Object-aware change memory (in progress)
 
-Freeze the Phase 6A baseline and train one component against a failure it
-actually exposed. Candidate directions include cluster association,
-correspondence, or RGB-D candidate classification using a separately labelled
-or synthetic training source.
+The high-level subphase roadmap is documented in
+[`phases/06_phase6_overview.md`](phases/06_phase6_overview.md).
+
+### Phase 6B1 - Frozen RGB object localization (implemented)
+
+Before associating or training object identities, establish a visible baseline
+that automatically locates movable office objects. Phase 6B1 samples 96
+pose-diverse keyframes per ETH observation, uses frozen Grounding DINO to detect
+chairs, waste bins, and boxes, and uses frozen SAM 2.1 to create masks. The
+Objects UI exposes predictions, confidence filters, masks, model provenance,
+and an optional 48-frame VLM pseudo-audit. It makes no cross-visit identity or
+movement claim. See
+[`phases/06b1_object_localization.md`](phases/06b1_object_localization.md).
+
+Later Phase 6B subphases will establish an honest labelled evaluation slice,
+project verified masks into the shared 3D coordinate frame, associate likely
+object identities across visits, and compare object state. A trained component
+should be introduced only against a measured failure from those baselines,
+using a separately labelled or synthetic training source where necessary.
 
 Do not infer temporal-change capabilities from 7-Scenes Office: its manifests do
 not contain real calendar time, verified traversal chronology, or recorded

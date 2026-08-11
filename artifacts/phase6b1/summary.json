@@ -1,0 +1,39 @@
+{
+  "audit": {
+    "cached_frame_count": 46,
+    "claim_boundary": "These are VLM pseudo-audit judgments, not human annotations or ground-truth accuracy.",
+    "complete": true,
+    "high_confidence_pseudo_support_rate": 0.6375,
+    "high_confidence_threshold": 0.35,
+    "mask_quality_counts": {
+      "excessive": 66,
+      "good": 48,
+      "partial": 46,
+      "uncertain": 5
+    },
+    "requested_frame_count": 48,
+    "reviewed_detection_count": 165,
+    "verdict_counts": {
+      "supported": 79,
+      "uncertain": 15,
+      "unsupported": 71
+    }
+  },
+  "class_counts": {
+    "box": 425,
+    "chair": 515,
+    "waste_bin": 477
+  },
+  "dataset": "ETH ASL Change Detection: Office",
+  "detection_count": 1417,
+  "empty_frame_count": 1,
+  "frame_count": 384,
+  "frames_per_observation": 96,
+  "frames_with_detections": 383,
+  "models": {
+    "detector": "IDEA-Research/grounding-dino-tiny",
+    "segmenter": "facebook/sam2.1-hiera-small"
+  },
+  "rejected_detection_count": 414,
+  "schema_version": 1
+}

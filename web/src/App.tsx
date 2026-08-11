@@ -1,11 +1,11 @@
-import { NavLink, Outlet, Route, Routes } from "react-router";
+import { Navigate, NavLink, Outlet, Route, Routes } from "react-router";
 import { EvaluationPage } from "./pages/EvaluationPage";
 import { FailuresPage } from "./pages/FailuresPage";
 import { HomePage } from "./pages/HomePage";
 import { QueryDetailPage } from "./pages/QueryDetailPage";
 import { ZoneDetailPage } from "./pages/ZoneDetailPage";
 import { ZonesPage } from "./pages/ZonesPage";
-import { ChangesPage } from "./pages/ChangesPage";
+import { ObjectsPage } from "./pages/ObjectsPage";
 import styles from "./App.module.css";
 
 function Layout() {
@@ -24,7 +24,7 @@ function Layout() {
           <NavLink to="/lab/evaluation">Evidence Lab</NavLink>
           <NavLink to="/lab/failures">Failures</NavLink>
           <NavLink to="/lab/zones">Zones</NavLink>
-          <NavLink to="/lab/changes">Changes</NavLink>
+          <NavLink to="/lab/objects">Objects</NavLink>
         </nav>
       </header>
       <main className={styles.main}><Outlet /></main>
@@ -45,7 +45,8 @@ export default function App() {
         <Route path="lab/queries/:queryId" element={<QueryDetailPage />} />
         <Route path="lab/zones" element={<ZonesPage />} />
         <Route path="lab/zones/:zoneSlug" element={<ZoneDetailPage />} />
-        <Route path="lab/changes" element={<ChangesPage />} />
+        <Route path="lab/objects" element={<ObjectsPage />} />
+        <Route path="lab/changes" element={<Navigate to="/lab/objects" replace />} />
       </Route>
     </Routes>
   );

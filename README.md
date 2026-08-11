@@ -6,6 +6,10 @@ Phase 6A also evaluates controlled real-scene change using four RGB-D/3D
 observations from ETH Zurich's public Change Detection Office dataset. The
 dataset itself is not redistributed.
 
+Phase 6B1 adds automatic RGB object localization over 384 dense office
+keyframes. Frozen Grounding DINO predictions and SAM 2.1 masks replace the
+hand-drawn boxes used in the earlier change showcase.
+
 > **Research-use notice:** 7-Scenes is provided by Microsoft Research for
 > non-commercial use. This repository is a personal research and portfolio
 > demonstration for hiring-manager review, not a commercial deployment. The
@@ -71,7 +75,7 @@ Each case will show the query, the retrieved observation, the simulator ground t
 
 ## Current status
 
-Phases 1 through 5 are implemented. The repository can generate reproducible
+Phases 1 through 5, Phase 6A, and Phase 6B1 are implemented. The repository can generate reproducible
 MiniGrid inspection trajectories, search them with frozen CLIP ViT-B/32, and
 evaluate real-image place memory on 10,000 7-Scenes Office frames:
 
@@ -92,6 +96,9 @@ evaluate real-image place memory on 10,000 7-Scenes Office frames:
 - optional, explicitly confirmed VLM analysis over selected licensed-dataset evidence.
 - cross-traversal retrieval over 24 designated source-target traversal pairs;
 - separate measurement of reference-route coverage and retrieval quality.
+- automatic chair, waste-bin, and box localization over four ETH Office visits;
+- inspectable detector boxes, segmentation masks, confidence filters, and a
+  sampled VLM pseudo-audit in the Objects UI.
 
 On the strict 0.25 m / 30 degree criterion, 65.4% of held-out queries have a
 qualifying stored memory. Among those covered queries, exact CLIP retrieval
@@ -133,6 +140,19 @@ pseudo-reference rather than human ground truth. The acceptance run produced
 candidates entered the pseudo-reference. The compact frozen counts are in
 [`artifacts/phase6a/summary.json`](artifacts/phase6a/summary.json).
 
+The automatic object-localization baseline is documented in
+[Phase 6B1: Automatic Object Localization](docs/phases/06b1_object_localization.md).
+The broader object-aware memory design, including the RGB-D and 3D mathematics,
+is documented in [Phase 6B: Object-Aware Change Memory](docs/phases/06b_object_aware_change_memory.md).
+The high-level roadmap for all Phase 6 subphases is in
+[Phase 6: Object-Aware Physical Change Memory](docs/phases/06_phase6_overview.md).
+Its CUDA acceptance run processed 384 keyframes and retained 1,417 predictions:
+515 chairs, 477 waste bins, and 425 boxes. These are predictions, not correct
+object counts. The completed VLM audit reviewed all 48 requested frames and
+found substantial false positives: 79 supported, 15 uncertain, and 71
+unsupported predictions. Frozen counts and the pseudo-audit boundary are in
+[`artifacts/phase6b1/summary.json`](artifacts/phase6b1/summary.json).
+
 Prepare and view the ETH Office observations:
 
 ```powershell
@@ -152,16 +172,30 @@ To use the React showcase:
 cd web
 npm run build
 cd ..
-uv run visual-memory-lab serve-ui
+uv run --extra cuda visual-memory-lab serve-ui
 ```
 
-Open `http://127.0.0.1:8000/lab/changes` to compare consecutive office visits
-through three curated chair-relocation examples. The main view pairs
-highlighted RGB evidence with a focused 3D difference crop and states the
-object-identity limitation directly. The orange image boxes are manually
-curated for this presentation; they are not detector predictions. Raw surface counts and full-room plots
-are kept in an expandable, plain-language diagnostics section; the complete
-six-pair and VLM reports remain in `outputs/phase6a/`.
+Open `http://127.0.0.1:8000/lab/objects` to browse model-generated object
+evidence. The page filters 384 dense office keyframes by visit, object class,
+detector score, and optional VLM audit status; it can show raw images, boxes,
+masks, or both. These boxes are Grounding DINO predictions and the masks are
+SAM 2.1 predictions. They are not hand-drawn annotations and do not establish
+object identity across visits. The older `/lab/changes` route redirects here;
+the Phase 6A research artifacts remain in `outputs/phase6a/`.
+
+Generate the Phase 6B1 artifact on an NVIDIA GPU with:
+
+```powershell
+uv sync --extra cuda
+uv run --extra cuda visual-memory-lab localize-eth-objects `
+  --input data/eth-change-detection/office/office `
+  --output outputs/phase6b1/object-localization `
+  --keyframes-per-observation 96 `
+  --device cuda
+```
+
+The optional 48-frame VLM pseudo-audit and full method are documented in the
+Phase 6B1 guide.
 
 ## Dataset and model citations
 
@@ -181,6 +215,13 @@ referencing the project:
   Dense Reconstruction and Dynamic Object Discovery.” *ICRA*, 2017.
   [Paper](https://cesarcadena.ethz.ch/files/ICRA2017_mfehr.pdf) ·
   [ETH dataset page](https://projects.asl.ethz.ch/datasets/change-detection/)
+- Shilong Liu et al. “Grounding DINO: Marrying DINO with Grounded Pre-Training
+  for Open-Set Object Detection.” *ECCV*, 2024.
+  [Paper](https://arxiv.org/abs/2303.05499) ·
+  [official repository](https://github.com/IDEA-Research/GroundingDINO)
+- Nikhila Ravi et al. “SAM 2: Segment Anything in Images and Videos.” 2024.
+  [Paper](https://arxiv.org/abs/2408.00714) ·
+  [official repository](https://github.com/facebookresearch/sam2)
 
 The [7-Scenes dataset page and license](https://www.microsoft.com/en-us/research/project/rgb-d-dataset-7-scenes/)
 restrict the dataset to non-commercial use. CLIP code is published under the
@@ -235,7 +276,7 @@ Set-Location web
 npm install
 npm run build
 Set-Location ..
-uv run visual-memory-lab serve-ui
+uv run --extra cuda visual-memory-lab serve-ui
 ```
 
 Then open `http://127.0.0.1:8000`. Search remains local. If `.env` contains an
