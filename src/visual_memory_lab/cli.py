@@ -19,6 +19,13 @@ def _positive_integer(value: str) -> int:
     return parsed
 
 
+def _non_negative_integer(value: str) -> int:
+    parsed = int(value)
+    if parsed < 0:
+        raise argparse.ArgumentTypeError("must be non-negative")
+    return parsed
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="visual-memory-lab",
@@ -86,6 +93,15 @@ def build_parser() -> argparse.ArgumentParser:
     evaluate.add_argument("--output", type=Path, required=True)
     evaluate.add_argument("--device", default="auto")
     evaluate.add_argument("--seed", type=int, default=42)
+
+    traversal = subparsers.add_parser(
+        "evaluate-traversal-memory",
+        help="evaluate pose-comparable retrieval from designated reference traversals",
+    )
+    traversal.add_argument("--memory-index", type=Path, required=True)
+    traversal.add_argument("--query-index", type=Path, required=True)
+    traversal.add_argument("--output", type=Path, required=True)
+    traversal.add_argument("--seed", type=_non_negative_integer, default=42)
 
     serve = subparsers.add_parser(
         "serve-ui",
@@ -317,4 +333,22 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
         )
         uvicorn.run(app, host=args.host, port=args.port)
+    elif args.command == "evaluate-traversal-memory":
+        from visual_memory_lab.traversal_evaluation import write_traversal_evaluation
+
+        try:
+            memory = MemoryIndex.load(args.memory_index)
+            queries = MemoryIndex.load(args.query_index)
+            metrics = write_traversal_evaluation(
+                memory=memory,
+                queries=queries,
+                output=args.output,
+                seed=args.seed,
+            )
+        except (FileExistsError, OSError, ValueError) as error:
+            parser.error(str(error))
+        print(
+            f"Evaluated {metrics['query_target_count']} query-target combinations "
+            f"across {metrics['pair_count']} traversal pairs in {args.output.resolve()}"
+        )
     return 0

@@ -17,6 +17,7 @@ from fastapi.staticfiles import StaticFiles
 from PIL import Image, UnidentifiedImageError
 from pydantic import ValidationError
 
+from visual_memory_lab import __version__
 from visual_memory_lab.api_models import (
     AnalysisRequest,
     AnalysisResponse,
@@ -112,7 +113,7 @@ def create_app(
 
     app = FastAPI(
         title="Visual Memory Lab API",
-        version="0.4.0",
+        version=__version__,
         lifespan=lifespan,
     )
 
