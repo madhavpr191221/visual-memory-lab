@@ -1,0 +1,12 @@
+import { useEffect, useState } from "react";
+import { Link } from "react-router";
+import { api } from "../api";
+import type { QueryPage } from "../types";
+import styles from "./pages.module.css";
+const TAGS = ["", "strict-top1", "strict-rescued-at5", "strict-rescued-at10", "strict-miss-at10", "uncovered", "relaxed-only-top1", "large-translation", "large-rotation"];
+export function FailuresPage() {
+  const [page, setPage] = useState<QueryPage | null>(null); const [offset, setOffset] = useState(0); const [tag, setTag] = useState(""); const [error, setError] = useState("");
+  useEffect(() => { setError(""); api.queries(offset, tag).then(setPage).catch((reason: Error) => setError(reason.message)); }, [offset, tag]);
+  const changeTag = (value: string) => { setTag(value); setOffset(0); };
+  return <><header className="page-heading"><span className="eyebrow">Evidence Lab</span><h1>Failure browser</h1><p>Inspect the actual query frame and its nearest memories. Tags describe retrieval outcomes; they are not model-generated explanations.</p></header><div className={styles.filterBar}><label>Outcome <select value={tag} onChange={(event) => changeTag(event.target.value)}>{TAGS.map((value) => <option key={value} value={value}>{value || "all queries"}</option>)}</select></label>{page && <span>{page.total.toLocaleString()} matching queries</span>}</div>{error && <p className="error">{error}</p>}{!page ? <p>Loading queries…</p> : <><section className={styles.queryGrid}>{page.items.map((item) => <Link className={`panel ${styles.queryCard}`} to={`/lab/queries/${encodeURIComponent(item.query_id)}`} key={item.query_id}><img src={item.image_url} alt={`Query ${item.query_id}`} loading="lazy" /><div className={styles.queryBody}><strong>{item.sequence_id} · frame {item.frame}</strong><p>{item.top1_translation_error_m.toFixed(2)} m · {item.top1_rotation_error_deg.toFixed(1)}°</p><div className={styles.tags}>{item.tags.map((value) => <span className={styles.tag} key={value}>{value}</span>)}</div></div></Link>)}</section><nav className={styles.pager} aria-label="Query pages"><button disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - page.limit))}>Previous</button><span>{offset + 1}–{Math.min(offset + page.limit, page.total)} of {page.total}</span><button disabled={offset + page.limit >= page.total} onClick={() => setOffset(offset + page.limit)}>Next</button></nav></>}</>;
+}

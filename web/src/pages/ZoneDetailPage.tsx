@@ -1,0 +1,6 @@
+import { useEffect, useState } from "react";
+import { Link, useParams } from "react-router";
+import { api } from "../api";
+import type { Zone } from "../types";
+import styles from "./pages.module.css";
+export function ZoneDetailPage() { const { zoneSlug = "" } = useParams(); const [zone, setZone] = useState<Zone | null>(null); const [error, setError] = useState(""); useEffect(() => { api.zone(zoneSlug).then(setZone).catch((reason: Error) => setError(reason.message)); }, [zoneSlug]); if (error) return <p className="error">{error}</p>; if (!zone) return <p>Loading zone…</p>; return <><p><Link to="/lab/zones">← All zones</Link></p><header className="page-heading"><span className="eyebrow">{zone.assigned_frame_count.toLocaleString()} assigned frames</span><h1>{zone.name}</h1><p>{zone.description}</p></header><section><h2>Stable landmarks</h2><div className={styles.landmarks}>{zone.stable_landmarks.map((landmark) => <span key={landmark}>{landmark}</span>)}</div></section><section className={styles.section}><h2>Representative memories</h2><div className={styles.queryGrid}>{zone.memories?.map((memory) => <article className={`panel ${styles.queryCard}`} key={memory.observation_id}><img src={memory.image_url} alt={memory.observation_id} loading="lazy" /><div className={styles.queryBody}><small>{memory.observation_id}</small></div></article>)}</div></section></>; }

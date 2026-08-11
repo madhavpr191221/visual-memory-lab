@@ -114,9 +114,12 @@ A visually similar frame is not necessarily the frame from the correct physical
 work area. Simulator event and temporal metrics remain useful future controlled
 experiments; they are not mixed into the completed real-image pose benchmark.
 
-## Phase 4 - Failure atlas
+## Phase 4 - Office memory explorer (implemented)
 
-Create a small failure taxonomy:
+Turn the real-image Office experiment into a local evidence-first application.
+The interface supports text and uploaded-image retrieval, interpretable zone
+agreement, and inspection of the frozen evaluation results. It also makes the
+failure taxonomy browsable:
 
 | Failure | Example |
 |---|---|
@@ -127,29 +130,34 @@ Create a small failure taxonomy:
 | Stale memory | The object moved after the stored observation |
 | Identity confusion | Similar objects are mistaken for the same object |
 
-For every failure, store:
+For every held-out query, expose:
 
 - query observation;
 - retrieved observation;
-- simulator ground truth;
-- failure category;
-- short explanation;
-- corrected or improved retrieval result, if available.
+- camera-pose ground truth;
+- mechanical outcome tags;
+- all ten retrieved memories with similarity and pose errors.
 
-The first explanations will be mechanical using simulator state. A VLM may be added later only for visual case descriptions.
+The main retrieval path stays local and displays images before any generated
+answer. Optional VLM judgment is a separate confirmed action over one to five
+user-selected public frames. It uses a strict response schema, validates
+evidence citations, caches public text judgments, and never caches an uploaded
+query image. The detailed design is in
+[phases/04_office_memory_explorer.md](phases/04_office_memory_explorer.md).
 
-## Phase 5 - Minimal interface
+## Phase 5 - Field-data bridge
 
-Build a simple local interface with:
+Use the completed interface to test a second public or deliberately collected
+dataset with meaningful changes over time. This is where the project can add:
 
-- environment/episode selector;
-- text or image query;
-- top-k control;
-- retrieved observations displayed horizontally;
-- timestep and pose information;
-- failure label when ground truth is available.
+- real capture timestamps;
+- repeated inspection rounds;
+- object or condition changes;
+- questions about when a visible state first appeared;
+- evaluation of stale-memory and temporal-boundary failures.
 
-No agents, chat orchestration, generation, or complicated backend are needed initially.
+Do not infer these capabilities from 7-Scenes Office: its current manifests do
+not contain real calendar time or recorded maintenance events.
 
 ## Public project structure
 

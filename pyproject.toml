@@ -1,10 +1,11 @@
 [project]
 name = "visual-memory-lab"
-version = "0.3.0"
+version = "0.4.0"
 description = "A research lab for task-relevant visual memory in simulated and real scenes."
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    "fastapi>=0.141.1",
     "gymnasium>=1.2.3,<2",
     "minigrid>=3.1.0,<4",
     "numpy>=2.5.2",
@@ -12,8 +13,10 @@ dependencies = [
     "pillow>=12.3.0,<13",
     "pydantic>=2,<3",
     "python-dotenv>=1,<2",
+    "python-multipart>=0.0.32",
     "torch>=2.7,<3",
     "transformers>=5.9,<6",
+    "uvicorn>=0.52.1",
 ]
 
 [project.scripts]
@@ -21,6 +24,7 @@ visual-memory-lab = "visual_memory_lab.cli:main"
 
 [dependency-groups]
 dev = [
+    "httpx2>=2.10.0",
     "pytest>=8,<10",
 ]
 
