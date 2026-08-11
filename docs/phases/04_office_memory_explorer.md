@@ -2,7 +2,7 @@
 
 ## Objective
 
-Phase 4 turns the Phase 3 experiment into a usable local application without hiding the experiment behind a chatbot. A user can ask an office question or provide a reference image, inspect the retrieved memories, see how strongly those memories agree on a place zone, and then choose whether a vision-language model should judge a small evidence set.
+Phase 4 turns the Phase 3 experiment into a usable local application without hiding the experiment behind a chatbot. A user can ask an office question or provide a reference image, inspect the retrieved memories, see how strongly those memories agree on a place zone, and then choose whether a vision-language model should judge a small evidence set. The underlying 7-Scenes data is licensed by Microsoft Research for non-commercial use; the dataset files are not redistributed by this repository.
 
 The main design rule is **evidence before answers**. Retrieval is useful on its own and stays local. Model judgment is optional, explicit, and constrained to selected public images.
 
@@ -158,3 +158,10 @@ The tests cover local search contracts, upload validation, allowlisted image ser
 - Place-zone agreement is not proof that every retrieved frame is correct.
 - VLM analysis is a bounded interpretation of selected images, not an autonomous agent.
 - The Office dataset demonstrates place memory; it is not yet a live workplace deployment.
+
+## Attribution
+
+The interface presents results derived from Microsoft Research's 7-Scenes
+dataset and uses OpenAI CLIP ViT-B/32. See the repository
+[Third-Party Notices](../../THIRD_PARTY_NOTICES.md) for the non-commercial
+dataset terms, original 7-Scenes paper, CLIP paper, code license, and model card.

@@ -11,7 +11,8 @@ Phase 3: build, label, and measure the memory
 Phase 4: let a person search and inspect that memory
 ```
 
-Phase 3 prepares the public 7-Scenes Office data, creates the CLIP memory,
+Phase 3 prepares the publicly available, non-commercial 7-Scenes Office
+research data, creates the CLIP memory,
 measures retrieval with camera poses, and produces seven VLM-assisted place
 zones. Phase 4 loads those frozen artifacts into a local application. It
 retrieves evidence, counts zone agreement, exposes failures, and optionally
@@ -76,7 +77,8 @@ events.
 
 ### 1. Dataset and split
 
-The experiment uses the Office scene from the public 7-Scenes dataset. It has
+The experiment uses the Office scene from the publicly available 7-Scenes
+research dataset. Microsoft Research provides it for non-commercial use. It has
 ten recorded sequences, each containing 1,000 RGB frames and matching camera
 poses. Every RGB frame is 640 by 480 pixels.
 
@@ -446,3 +448,25 @@ coverage remains a hard retrieval ceiling.
 
 The next meaningful extension is a dataset with repeated inspection rounds and
 real observable changes, not another interface layer.
+
+## References and third-party use
+
+The repository does not redistribute 7-Scenes RGB-D files. This work is a
+non-commercial research and hiring-portfolio demonstration. Dataset-derived
+results are based on:
+
+> Jamie Shotton, Ben Glocker, Christopher Zach, Shahram Izadi, Antonio
+> Criminisi, and Andrew Fitzgibbon. “Scene Coordinate Regression Forests for
+> Camera Relocalization in RGB-D Images.” CVPR, 2013.
+
+See the [official dataset page and license](https://www.microsoft.com/en-us/research/project/rgb-d-dataset-7-scenes/)
+and [Microsoft Research publication](https://www.microsoft.com/en-us/research/publication/scene-coordinate-regression-forests-for-camera-relocalization-in-rgb-d-images-2/).
+
+CLIP attribution:
+
+> Alec Radford et al. “Learning Transferable Visual Models From Natural
+> Language Supervision.” ICML, 2021.
+
+See the [CLIP paper](https://proceedings.mlr.press/v139/radford21a.html),
+[official repository](https://github.com/openai/CLIP), and this project's
+[Third-Party Notices](../../THIRD_PARTY_NOTICES.md).

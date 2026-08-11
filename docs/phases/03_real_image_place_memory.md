@@ -8,7 +8,8 @@ real-world dataset. It asks one concrete question:
 > Given a camera image from a new pass through an office, can CLIP retrieve a
 > stored image from the same physical place during an earlier pass?
 
-The experiment uses the Office scene from the 7-Scenes dataset. It does not
+The experiment uses the Office scene from the publicly available 7-Scenes
+dataset, which Microsoft Research provides for non-commercial use. It does not
 train or fine-tune a model. The purpose is to measure how useful the frozen
 Phase 2 representation is when viewpoint, camera path, clutter, and visual
 appearance vary naturally.
@@ -339,3 +340,20 @@ uv run visual-memory-lab evaluate-real-memory `
 Generated images, indexes, API caches, and per-query results stay ignored.
 The compact zone annotation is tracked because it is required to audit and
 reproduce the semantic benchmark.
+
+## Attribution and use
+
+7-Scenes data is not redistributed by this repository. The experiment is a
+non-commercial research and portfolio demonstration governed by the original
+[Microsoft Research dataset terms](https://www.microsoft.com/en-us/research/project/rgb-d-dataset-7-scenes/).
+Results based on the dataset cite:
+
+> Jamie Shotton, Ben Glocker, Christopher Zach, Shahram Izadi, Antonio
+> Criminisi, and Andrew Fitzgibbon. “Scene Coordinate Regression Forests for
+> Camera Relocalization in RGB-D Images.” CVPR, 2013.
+
+The frozen representation is from Alec Radford et al., “Learning Transferable
+Visual Models From Natural Language Supervision,” ICML 2021. See the
+[paper](https://proceedings.mlr.press/v139/radford21a.html), the
+[official CLIP repository](https://github.com/openai/CLIP), and the repository's
+[Third-Party Notices](../../THIRD_PARTY_NOTICES.md).

@@ -1,6 +1,12 @@
 # Visual Memory Lab
 
-Visual Memory Lab is a small research project about finding useful evidence in a history of images. It now works with both controlled MiniGrid trajectories and public real-world Office images from 7-Scenes.
+Visual Memory Lab is a small research project about finding useful evidence in a history of images. It now works with both controlled MiniGrid trajectories and the publicly available 7-Scenes Office research dataset.
+
+> **Research-use notice:** 7-Scenes is provided by Microsoft Research for
+> non-commercial use. This repository is a personal research and portfolio
+> demonstration for hiring-manager review, not a commercial deployment. The
+> original RGB-D dataset, embeddings, and model weights are not redistributed.
+> See [Third-Party Notices](THIRD_PARTY_NOTICES.md).
 
 The basic problem is simple: a camera may record thousands of observations over time, but storing those images is not enough. When someone asks about an earlier event, the system must retrieve the right image even if the viewpoint, lighting, surroundings, or appearance of an object has changed.
 
@@ -79,7 +85,7 @@ evaluate real-image place memory on 10,000 7-Scenes Office frames:
 - a local React/TypeScript office-memory explorer backed by FastAPI;
 - text and uploaded-image retrieval with visible evidence and zone agreement;
 - evaluation, failure, query-detail, and place-zone browsers;
-- optional, explicitly confirmed VLM analysis over selected public evidence.
+- optional, explicitly confirmed VLM analysis over selected licensed-dataset evidence.
 
 On the strict 0.25 m / 30 degree criterion, 65.4% of held-out queries have a
 qualifying stored memory. Among those covered queries, exact CLIP retrieval
@@ -99,6 +105,27 @@ creation to local retrieval, zone voting, evidence analysis, and the React UI.
 The original [Phase 3 methodology](docs/phases/03_real_image_place_memory.md)
 and [Phase 4 interface notes](docs/phases/04_office_memory_explorer.md) remain as
 phase-specific references.
+
+## Dataset and model citations
+
+This project reports results on the 7-Scenes dataset and uses the frozen CLIP
+ViT-B/32 representation. Please use the following original sources when
+referencing the project:
+
+- Jamie Shotton, Ben Glocker, Christopher Zach, Shahram Izadi, Antonio
+  Criminisi, and Andrew Fitzgibbon. “Scene Coordinate Regression Forests for
+  Camera Relocalization in RGB-D Images.” *CVPR*, 2013.
+  [Microsoft Research publication](https://www.microsoft.com/en-us/research/publication/scene-coordinate-regression-forests-for-camera-relocalization-in-rgb-d-images-2/)
+- Alec Radford et al. “Learning Transferable Visual Models From Natural
+  Language Supervision.” *ICML*, 2021.
+  [Paper](https://proceedings.mlr.press/v139/radford21a.html) ·
+  [official CLIP repository](https://github.com/openai/CLIP)
+
+The [7-Scenes dataset page and license](https://www.microsoft.com/en-us/research/project/rgb-d-dataset-7-scenes/)
+restrict the dataset to non-commercial use. CLIP code is published under the
+[MIT License](https://github.com/openai/CLIP/blob/main/LICENSE); its
+[model card](https://github.com/openai/CLIP/blob/main/model-card.md) describes
+the intended research use and deployment limitations.
 
 ## Local setup
 
