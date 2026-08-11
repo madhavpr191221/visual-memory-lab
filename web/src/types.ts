@@ -116,6 +116,33 @@ export interface ChangePair {
   review_limitations: string[];
 }
 
+export interface ChangeFocusBox {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface ChangeCase {
+  pair_id: string;
+  earlier_observation: number;
+  current_observation: number;
+  earlier_image_url: string;
+  current_image_url: string;
+  earlier_frame: number;
+  current_frame: number;
+  earlier_box: ChangeFocusBox;
+  current_box: ChangeFocusBox;
+  outcome: "object_added" | "object_removed" | "object_moved" | "uncertain" | "reconstruction_artifact";
+  outcome_label: string;
+  headline: string;
+  confidence: "low" | "medium" | "high";
+  explanation: string;
+  limitation: string;
+  geometry_url: string;
+  geometry_note: string;
+}
+
 export interface Phase6aShowcase {
   dataset: string;
   logical_order_note: string;
@@ -137,4 +164,5 @@ export interface Phase6aShowcase {
   };
   observations: ChangeObservation[];
   pairs: ChangePair[];
+  cases: ChangeCase[];
 }

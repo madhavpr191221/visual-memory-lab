@@ -152,8 +152,12 @@ cd ..
 uv run visual-memory-lab serve-ui
 ```
 
-Open `http://127.0.0.1:8000/lab/changes` to browse all four scans, compare any
-of the six mesh pairs, and inspect the structured VLM reviews.
+Open `http://127.0.0.1:8000/lab/changes` to compare consecutive office visits
+through three curated chair-relocation examples. The main view pairs
+highlighted RGB evidence with a focused 3D difference crop and states the
+object-identity limitation directly. Raw surface counts and full-room plots
+are kept in an expandable, plain-language diagnostics section; the complete
+six-pair and VLM reports remain in `outputs/phase6a/`.
 
 ## Dataset and model citations
 

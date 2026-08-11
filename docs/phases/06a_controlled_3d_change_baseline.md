@@ -578,9 +578,27 @@ Then visit:
 http://127.0.0.1:8000/lab/changes
 ```
 
-The **Changes** page lets the viewer switch among four scans, open all 96 RGB
-frames, select any of the six observation pairs, compare earlier/current RGB
-evidence, inspect both directional 3D projections, and read the VLM verdicts.
+The **Changes** page is intentionally narrower than the raw experiment. It
+starts with the three consecutive visit pairs and presents one curated chair
+relocation story at a time:
+
+1. an earlier and later RGB frame are shown side by side;
+2. the relevant chair is highlighted in both frames;
+3. the page states the cautious outcome and its identity limitation;
+4. a compact crop shows the corresponding coarse 3D difference regions;
+5. the raw counts, full-room projections, threshold, and claim boundary remain
+   available under **How did the comparison reach this result?**
+
+The highlighted RGB cases are human-curated presentation examples, not
+automatic object tracks or human-labelled benchmark ground truth. They make a
+specific limitation visible: the geometry can recover chair-shaped displaced
+regions, but the system does not yet assign persistent object identities.
+
+The diagnostics section deliberately uses operational language such as
+"surfaces seen only later" and "separate regions" instead of presenting voxel
+residuals as verified object changes. The complete 96-frame audit, all six pair
+comparisons, and every structured VLM judgment remain available in the static
+research reports listed above.
 
 ### Re-run the local geometry without overwriting accepted artifacts
 

@@ -38,18 +38,38 @@ const payload = {
     reviewed_candidates: [{ candidate_id: "candidate-0", verdict: "supported", interpretation: "current_only", description: "Visible box.", confidence: "high", evidence_ids: ["current"], limitations: [], related_candidate_id: null }],
     review_limitations: [],
   }],
+  cases: [{
+    pair_id: "0-to-1",
+    earlier_observation: 0,
+    current_observation: 1,
+    earlier_image_url: "/frame-0.jpg",
+    current_image_url: "/frame-1.jpg",
+    earlier_frame: 0,
+    current_frame: 1,
+    earlier_box: { x: 0.1, y: 0.1, width: 0.3, height: 0.4 },
+    current_box: { x: 0.4, y: 0.2, width: 0.3, height: 0.4 },
+    outcome: "object_moved",
+    outcome_label: "Object likely moved",
+    headline: "A box changed position",
+    confidence: "medium",
+    explanation: "The box appears in two positions.",
+    limitation: "The images do not prove object identity.",
+    geometry_url: "/current.png",
+    geometry_note: "The geometry marks a coarse region.",
+  }],
 };
 
 afterEach(() => vi.unstubAllGlobals());
 
 describe("ChangesPage", () => {
-  it("shows scans, geometry, and the pseudo-reference boundary", async () => {
+  it("shows one interpretable comparison and keeps diagnostics secondary", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify(payload), { status: 200 })));
     render(<ChangesPage />);
-    await waitFor(() => expect(screen.getByText("Pseudo-reference, not ground truth.", { exact: false })).toBeInTheDocument());
-    expect(screen.getByText("Raw geometric clusters")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "0-to-1 | consecutive" })).toBeInTheDocument();
-    expect(screen.getByText("Visible box.")).toBeInTheDocument();
-    expect(screen.getByAltText("Contact sheet for observation 0")).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText("A box changed position")).toBeInTheDocument());
+    expect(screen.getByRole("button", { name: "Visit 0 → Visit 1" })).toBeInTheDocument();
+    expect(screen.getByText("Look at the highlighted area")).toBeInTheDocument();
+    expect(screen.getByText("Did the room geometry change here too?")).toBeInTheDocument();
+    expect(screen.getByText("How did the comparison reach this result?")).toBeInTheDocument();
+    expect(screen.queryByText("Visible box.")).not.toBeInTheDocument();
   });
 });

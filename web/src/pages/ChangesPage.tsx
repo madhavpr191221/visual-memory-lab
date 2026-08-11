@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../api";
-import type { Phase6aShowcase } from "../types";
+import type { ChangeCase, ChangeFocusBox, ChangePair, Phase6aShowcase } from "../types";
 import styles from "./pages.module.css";
 
 const percent = (value: number) => `${(value * 100).toFixed(1)}%`;
@@ -8,7 +8,6 @@ const percent = (value: number) => `${(value * 100).toFixed(1)}%`;
 export function ChangesPage() {
   const [data, setData] = useState<Phase6aShowcase | null>(null);
   const [selectedPairId, setSelectedPairId] = useState("");
-  const [selectedObservation, setSelectedObservation] = useState(0);
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -18,7 +17,7 @@ export function ChangesPage() {
         const result = await api.phase6a();
         if (!ignore) {
           setData(result);
-          setSelectedPairId(result.pairs.find((pair) => pair.consecutive)?.pair_id ?? result.pairs[0]?.pair_id ?? "");
+          setSelectedPairId(result.cases[0]?.pair_id ?? "");
         }
       } catch (reason) {
         if (!ignore) setError(reason instanceof Error ? reason.message : "Could not load Phase 6A.");
@@ -28,84 +27,117 @@ export function ChangesPage() {
     return () => { ignore = true; };
   }, []);
 
+  const selectedCase = useMemo(
+    () => data?.cases.find((item) => item.pair_id === selectedPairId) ?? null,
+    [data, selectedPairId],
+  );
   const pair = useMemo(
     () => data?.pairs.find((item) => item.pair_id === selectedPairId) ?? null,
     [data, selectedPairId],
   );
-  const observation = data?.observations.find((item) => item.logical_order === selectedObservation) ?? null;
-  const observationByIndex = useMemo(
-    () => new Map(data?.observations.map((item) => [item.logical_order, item]) ?? []),
-    [data],
-  );
 
   if (error) return <><header className="page-heading"><span className="eyebrow">State-change memory</span><h1>What changed in the office?</h1></header><p className="error">{error}</p></>;
-  if (!data) return <p>Loading the Phase 6A evidence...</p>;
-
-  const earlier = pair ? observationByIndex.get(pair.earlier_observation) : undefined;
-  const current = pair ? observationByIndex.get(pair.current_observation) : undefined;
-  const primary = pair?.changed_fraction[data.method.primary_threshold_m.toFixed(3)];
+  if (!data) return <p>Loading the office comparisons...</p>;
 
   return <>
-    <header className="page-heading">
-      <span className="eyebrow">Phase 6A | Controlled 3D change</span>
-      <h1>What changed between office scans?</h1>
-      <p>This page follows the evidence from two real RGB-D scans to 3D difference clusters. It shows what the baseline can see, where it fragments, and what the VLM could or could not support.</p>
+    <header className={`page-heading ${styles.changeHero}`}>
+      <span className="eyebrow">Phase 6A · Repeated office visits</span>
+      <h1>What changed since the last visit?</h1>
+      <p>Choose two consecutive scans. The page shows the clearest RGB evidence first, then checks whether the 3D reconstruction tells the same story.</p>
     </header>
 
-    <aside className={styles.claimBoundary}><strong>Important boundary</strong><span>{data.claim_boundary} The observation numbers are logical order, not calendar dates.</span></aside>
-
-    <section className={styles.metricGrid} aria-label="Phase 6A metrics">
-      <Metric label="Office observations" value={data.metrics.observation_count} />
-      <Metric label="Viewable RGB frames" value={data.metrics.rgb_sample_count} />
-      <Metric label="Mesh comparisons" value={data.metrics.pair_count} />
-      <Metric label="Raw geometric clusters" value={data.metrics.geometric_candidate_count} />
-      <Metric label="VLM-reviewed candidates" value={data.metrics.reviewed_candidate_count} />
-      <Metric label="Accepted pseudo-reference" value={data.metrics.accepted_pseudo_reference_count} />
-    </section>
-
-    <section className={styles.section}>
-      <h2>From scan to evidence</h2>
-      <div className={styles.processFlow}>
-        {["Earlier RGB-D scan", "Aligned 3D reconstruction", "Nearest-surface comparison", "Changed voxel clusters", "RGB + 3D review"].map((step, index) => <div key={step}><span>{index + 1}</span><strong>{step}</strong></div>)}
-      </div>
-      <div className={`panel ${styles.formula}`}>
-        <code>d(q, P) = min ||q - p||</code>
-        <p>For every point <em>q</em> in one reconstruction, find the closest surface point <em>p</em> in the other. A residual above {(data.method.primary_threshold_m * 100).toFixed(0)} cm becomes a geometric change candidate.</p>
-      </div>
-    </section>
-
-    <section className={styles.section}>
-      <div className={styles.resultHeader}><div><span className="eyebrow">The raw observations</span><h2>See the office scans</h2></div><span>{observation?.frame_count ?? 0} sampled frames in this observation</span></div>
-      <div className={styles.observationTabs}>{data.observations.map((item) => <button className={item.logical_order === selectedObservation ? styles.selectedTab : ""} key={item.observation_id} onClick={() => setSelectedObservation(item.logical_order)}>Observation {item.logical_order}</button>)}</div>
-      {observation && <><img className={styles.contactSheet} src={observation.contact_sheet_url} alt={`Contact sheet for observation ${observation.logical_order}`} /><div className={styles.frameGrid}>{observation.frames.map((frame) => <a href={frame.image_url} target="_blank" rel="noreferrer" key={frame.message_index}><img loading="lazy" src={frame.image_url} alt={`Observation ${observation.logical_order}, frame ${frame.message_index}`} /><span>Frame {String(frame.message_index).padStart(6, "0")}</span></a>)}</div></>}
-    </section>
-
-    <section className={styles.section}>
-      <div className={styles.resultHeader}><div><span className="eyebrow">Pairwise comparison</span><h2>Choose two logical visits</h2></div><span>Consecutive pairs are marked</span></div>
-      <div className={styles.pairTabs}>{data.pairs.map((item) => <button className={item.pair_id === selectedPairId ? styles.selectedTab : ""} key={item.pair_id} onClick={() => setSelectedPairId(item.pair_id)}>{item.pair_id}{item.consecutive ? " | consecutive" : ""}</button>)}</div>
-      {pair && earlier && current && <>
-        <div className={styles.compareGrid}>
-          <EvidenceFigure title={`Earlier observation ${pair.earlier_observation}`} caption="Eight representative RGB views used during review." src={earlier.vlm_contact_sheet_url} />
-          <EvidenceFigure title={`Current observation ${pair.current_observation}`} caption="The same room in the later logical observation." src={current.vlm_contact_sheet_url} />
+    {data.cases.length === 0 ? <p className="error">No curated consecutive-visit cases are available.</p> : <>
+      <section className={styles.visitChooser} aria-label="Choose consecutive office visits">
+        <span>Compare</span>
+        <div className={styles.pairTabs}>
+          {data.cases.map((item) => <button
+            className={item.pair_id === selectedPairId ? styles.selectedTab : ""}
+            key={item.pair_id}
+            onClick={() => setSelectedPairId(item.pair_id)}
+          >Visit {item.earlier_observation} → Visit {item.current_observation}</button>)}
         </div>
-        <div className={styles.compareGrid}>
-          <EvidenceFigure title="Current-only geometry" caption={`${pair.current_only_candidate_count} clusters exceeded the 5 cm baseline.`} src={pair.current_only_projection_url} />
-          <EvidenceFigure title="Earlier-only geometry" caption={`${pair.earlier_only_candidate_count} clusters exceeded the 5 cm baseline.`} src={pair.earlier_only_projection_url} />
-        </div>
-        {primary && <p className={styles.pairSummary}>At the 5 cm threshold, {percent(primary.current_only)} of current voxels and {percent(primary.earlier_only)} of earlier voxels lacked a nearby counterpart. This includes physical differences and reconstruction artifacts.</p>}
-      </>}
-    </section>
+      </section>
 
-    {pair && <section className={styles.section}>
-      <div className={styles.resultHeader}><div><span className="eyebrow">Structured review</span><h2>What did the VLM support?</h2></div><span>{pair.reviewed_candidates.length} largest candidates reviewed</span></div>
-      <div className={styles.verdictLegend}><span>Supported: {data.metrics.verdict_counts.supported}</span><span>Uncertain: {data.metrics.verdict_counts.uncertain}</span><span>Unsupported: {data.metrics.verdict_counts.unsupported}</span></div>
-      <div className={styles.reviewGrid}>{pair.reviewed_candidates.map((candidate) => <article className={`panel ${styles.reviewCard}`} key={candidate.candidate_id}><div className={styles.reviewTop}><span className={`${styles.verdict} ${styles[candidate.verdict]}`}>{candidate.verdict}</span><span>{candidate.confidence} confidence</span></div><code>{candidate.candidate_id}</code><h3>{candidate.interpretation.replaceAll("_", " ")}</h3><p>{candidate.description}</p>{candidate.limitations.length > 0 && <small>{candidate.limitations.join(" ")}</small>}</article>)}</div>
-    </section>}
+      {selectedCase && pair && <ChangeStory key={selectedCase.pair_id} item={selectedCase} pair={pair} data={data} />}
+    </>}
   </>;
 }
 
-function Metric({ label, value }: { label: string; value: number }) {
-  return <article className={`panel ${styles.metric}`}><span>{label}</span><strong>{value.toLocaleString()}</strong></article>;
+function ChangeStory({ item, pair, data }: { item: ChangeCase; pair: ChangePair; data: Phase6aShowcase }) {
+  const primary = pair.changed_fraction[data.method.primary_threshold_m.toFixed(3)];
+  return <>
+    <section className={`panel ${styles.changeAnswer}`}>
+      <div>
+        <span className={`${styles.outcomeBadge} ${styles[item.outcome]}`}>{item.outcome_label}</span>
+        <h2>{item.headline}</h2>
+        <p>{item.explanation}</p>
+      </div>
+      <div className={styles.confidenceNote}><strong>{item.confidence} confidence</strong><span>Curated visual interpretation</span></div>
+    </section>
+
+    <section className={styles.section}>
+      <div className={styles.resultHeader}>
+        <div><span className="eyebrow">Visible evidence</span><h2>Look at the highlighted area</h2></div>
+        <span>Open either image to inspect it at full size</span>
+      </div>
+      <div className={styles.focusCompare}>
+        <FocusImage title={`Earlier · Visit ${item.earlier_observation}`} frame={item.earlier_frame} src={item.earlier_image_url} box={item.earlier_box} label="Area before" />
+        <div className={styles.changeArrow} aria-hidden="true">→</div>
+        <FocusImage title={`Later · Visit ${item.current_observation}`} frame={item.current_frame} src={item.current_image_url} box={item.current_box} label="Area after" />
+      </div>
+      <aside className={styles.limitNote}><strong>What we can safely say</strong><span>{item.limitation}</span></aside>
+    </section>
+
+    <section className={styles.section}>
+      <div className={styles.resultHeader}>
+        <div><span className="eyebrow">3D check</span><h2>Did the room geometry change here too?</h2></div>
+      </div>
+      <div className={`panel ${styles.geometryStory}`}>
+        <img src={item.geometry_url} alt={`Focused 3D difference for visits ${item.earlier_observation} and ${item.current_observation}`} />
+        <div>
+          <h3>Geometry supports a changed region—not an object identity</h3>
+          <p>{item.geometry_note}</p>
+          <p className={styles.plainDefinition}><strong>In plain English:</strong> the scanner found surfaces here in one visit that did not line up with surfaces in the other visit. That can support the RGB observation, but it cannot name or track the object yet.</p>
+        </div>
+      </div>
+    </section>
+
+    <details className={`panel ${styles.diagnostics}`}>
+      <summary>How did the comparison reach this result?</summary>
+      <div className={styles.diagnosticsBody}>
+        <ol className={styles.plainSteps}>
+          <li><strong>Record the office twice.</strong><span>Each visit contains colour images, depth measurements, and camera movement.</span></li>
+          <li><strong>Build a 3D copy of each visit.</strong><span>Depth measurements are combined into a room-shaped collection of surfaces.</span></li>
+          <li><strong>Place both copies in the same coordinate system.</strong><span>This lets us compare the same physical parts of the room instead of comparing image pixels directly.</span></li>
+          <li><strong>Find surfaces that no longer match.</strong><span>A surface counts as different when no surface lies within {(data.method.primary_threshold_m * 100).toFixed(0)} cm in the other visit.</span></li>
+          <li><strong>Group nearby differences.</strong><span>Neighbouring changed surface cells become one candidate region for inspection.</span></li>
+        </ol>
+
+        <div className={styles.simpleStats}>
+          <div><strong>{pair.current_only_candidate_count}</strong><span>separate regions seen only in the later scan</span></div>
+          <div><strong>{pair.earlier_only_candidate_count}</strong><span>separate regions seen only in the earlier scan</span></div>
+          {primary && <div><strong>{percent(Math.max(primary.current_only, primary.earlier_only))}</strong><span>largest unmatched surface fraction in this comparison</span></div>}
+        </div>
+
+        <p className={styles.diagnosticWarning}>These counts are deliberately not called “changes.” They also include occlusion, incomplete scanning, and reconstruction errors.</p>
+        <div className={styles.compareGrid}>
+          <EvidenceFigure title="Surfaces seen only later" caption="The numbered coloured regions are the largest areas selected for closer inspection." src={pair.current_only_projection_url} />
+          <EvidenceFigure title="Surfaces seen only earlier" caption="A missing counterpart may mean removal, movement, poor coverage, or reconstruction error." src={pair.earlier_only_projection_url} />
+        </div>
+        <aside className={styles.claimBoundary}><strong>Research boundary</strong><span>{data.claim_boundary} The visit numbers describe order, not calendar dates.</span></aside>
+      </div>
+    </details>
+  </>;
+}
+
+function FocusImage({ title, frame, src, box, label }: { title: string; frame: number; src: string; box: ChangeFocusBox; label: string }) {
+  return <figure className={`panel ${styles.focusFigure}`}>
+    <a href={src} target="_blank" rel="noreferrer" className={styles.focusImageWrap}>
+      <img src={src} alt={`${title}, frame ${frame}`} />
+      <span className={styles.focusBox} style={{ left: `${box.x * 100}%`, top: `${box.y * 100}%`, width: `${box.width * 100}%`, height: `${box.height * 100}%` }}><em>{label}</em></span>
+    </a>
+    <figcaption><strong>{title}</strong><span>Frame {String(frame).padStart(6, "0")}</span></figcaption>
+  </figure>;
 }
 
 function EvidenceFigure({ title, caption, src }: { title: string; caption: string; src: string }) {
