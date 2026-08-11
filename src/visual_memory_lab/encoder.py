@@ -89,12 +89,11 @@ class ClipEncoder:
             return pooled_output
         raise TypeError("CLIP feature extraction did not return a pooled tensor")
 
-    def encode_images(self, image_paths: Sequence[Path]) -> np.ndarray:
-        images: list[Image.Image] = []
+    def encode_pil_images(self, source_images: Sequence[Image.Image]) -> np.ndarray:
+        """Encode already-decoded images without writing temporary files."""
+
+        images = [image.convert("RGB") for image in source_images]
         try:
-            for path in image_paths:
-                with Image.open(path) as image:
-                    images.append(image.convert("RGB"))
             inputs = self.processor(images=images, return_tensors="pt").to(
                 self.device
             )
@@ -104,6 +103,17 @@ class ClipEncoder:
                 )
                 features = self._normalize(features)
             return features.detach().cpu().to(torch.float32).numpy()
+        finally:
+            for image in images:
+                image.close()
+
+    def encode_images(self, image_paths: Sequence[Path]) -> np.ndarray:
+        images: list[Image.Image] = []
+        try:
+            for path in image_paths:
+                with Image.open(path) as image:
+                    images.append(image.convert("RGB"))
+            return self.encode_pil_images(images)
         finally:
             for image in images:
                 image.close()

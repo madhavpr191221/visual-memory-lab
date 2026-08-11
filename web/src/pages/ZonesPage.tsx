@@ -1,0 +1,6 @@
+import { useEffect, useState } from "react";
+import { Link } from "react-router";
+import { api } from "../api";
+import type { Zone } from "../types";
+import styles from "./pages.module.css";
+export function ZonesPage() { const [zones, setZones] = useState<Zone[]>([]); const [error, setError] = useState(""); useEffect(() => { api.zones().then(setZones).catch((reason: Error) => setError(reason.message)); }, []); return <><header className="page-heading"><span className="eyebrow">Curated place vocabulary</span><h1>Office zones</h1><p>Human-readable areas derived from stable visual landmarks, then assigned across the training memory. They make retrieval easier to interpret; they are not ground-truth room boundaries.</p></header>{error && <p className="error">{error}</p>}<section className={styles.zoneGrid}>{zones.map((zone) => <Link className={`panel ${styles.zoneCard}`} to={`/lab/zones/${zone.slug}`} key={zone.slug}><span className="eyebrow">{zone.assigned_frame_count.toLocaleString()} frames</span><h2>{zone.name}</h2><p>{zone.description}</p><div className={styles.landmarks}>{zone.stable_landmarks.slice(0, 3).map((landmark) => <span key={landmark}>{landmark}</span>)}</div></Link>)}</section></>; }

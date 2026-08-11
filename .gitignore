@@ -19,3 +19,8 @@ data/*
 !data/.gitkeep
 outputs/*
 !outputs/.gitkeep
+
+# React build products
+web/node_modules/
+web/dist/
+web/*.tsbuildinfo

@@ -1,0 +1,22 @@
+:root { font-family: "Segoe UI", system-ui, sans-serif; --serif: Georgia, "Times New Roman", serif; color: #20231f; background: #f5f1e8; --paper: #f5f1e8; --surface: #fffdf8; --surface-2: #eee9de; --ink: #20231f; --muted: #687068; --line: #dcd6ca; --blue: #315f82; --blue-soft: #e3edf3; --green: #347057; --green-soft: #e3f0e8; --amber: #976b1e; --amber-soft: #f7edd2; --red: #9e4945; --red-soft: #f6e3e0; color-scheme: light dark; font-synthesis: none; text-rendering: optimizeLegibility; }
+* { box-sizing: border-box; }
+body { margin: 0; min-width: 320px; min-height: 100vh; background: var(--paper); }
+button, input, textarea, select { font: inherit; }
+button { cursor: pointer; }
+button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible { outline: 3px solid color-mix(in srgb, var(--blue) 40%, transparent); outline-offset: 2px; }
+h1, h2, h3, p { margin-top: 0; }
+h1, h2 { font-family: var(--serif); letter-spacing: -.02em; }
+h1 { font-size: clamp(42px, 6vw, 72px); line-height: .98; }
+h2 { font-size: clamp(28px, 3vw, 40px); }
+a { color: var(--blue); }
+.eyebrow { color: var(--blue); font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: .12em; }
+.page-heading { max-width: 760px; margin-bottom: 36px; }
+.page-heading h1 { font-size: clamp(38px, 5vw, 58px); margin-bottom: 14px; }
+.page-heading p { color: var(--muted); line-height: 1.7; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 20px; box-shadow: 0 12px 40px rgba(60, 52, 38, .06); }
+.status { display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; padding: 5px 9px; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .05em; }
+.status.strong { color: var(--green); background: var(--green-soft); }
+.status.moderate { color: var(--amber); background: var(--amber-soft); }
+.status.mixed { color: var(--red); background: var(--red-soft); }
+.error { padding: 14px 16px; color: var(--red); background: var(--red-soft); border-radius: 12px; }
+@media (prefers-color-scheme: dark) { :root { --paper: #171a18; --surface: #202420; --surface-2: #292e29; --ink: #f1eee6; --muted: #aeb7af; --line: #3a403a; --blue: #8bb8d7; --blue-soft: #243744; --green: #8bc3a4; --green-soft: #203a2c; --amber: #e1ba70; --amber-soft: #40341d; --red: #e69a93; --red-soft: #432825; } }

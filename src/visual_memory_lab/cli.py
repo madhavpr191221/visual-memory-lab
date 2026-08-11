@@ -86,6 +86,30 @@ def build_parser() -> argparse.ArgumentParser:
     evaluate.add_argument("--output", type=Path, required=True)
     evaluate.add_argument("--device", default="auto")
     evaluate.add_argument("--seed", type=int, default=42)
+
+    serve = subparsers.add_parser(
+        "serve-ui",
+        help="serve the local React office-memory explorer",
+    )
+    serve.add_argument(
+        "--memory-index", type=Path, default=Path("outputs/phase3/train-index")
+    )
+    serve.add_argument(
+        "--query-index", type=Path, default=Path("outputs/phase3/test-index")
+    )
+    serve.add_argument(
+        "--zones", type=Path, default=Path("artifacts/phase3/office-zones.json")
+    )
+    serve.add_argument(
+        "--evaluation", type=Path, default=Path("outputs/phase3/evaluation")
+    )
+    serve.add_argument("--web-dist", type=Path, default=Path("web/dist"))
+    serve.add_argument("--analysis-cache", type=Path, default=Path("outputs/phase4/vlm-cache"))
+    serve.add_argument("--analysis-model", default="gpt-5.6-terra")
+    serve.add_argument("--device", default="auto")
+    serve.add_argument("--host", default="127.0.0.1")
+    serve.add_argument("--port", type=_positive_integer, default=8000)
+    serve.add_argument("--verify-source", action="store_true")
     return parser
 
 
@@ -274,4 +298,23 @@ def main(argv: Sequence[str] | None = None) -> int:
             f"Evaluated {metrics['pose']['query_count']} image queries and "
             f"{metrics['text_zones']['prompt_count']} text queries in {args.output.resolve()}"
         )
+    elif args.command == "serve-ui":
+        import uvicorn
+
+        from visual_memory_lab.api import AppConfig, create_app
+
+        app = create_app(
+            AppConfig(
+                memory_index=args.memory_index,
+                query_index=args.query_index,
+                zones=args.zones,
+                evaluation=args.evaluation,
+                web_dist=args.web_dist,
+                device=args.device,
+                verify_source=args.verify_source,
+                analysis_model=args.analysis_model,
+                analysis_cache=args.analysis_cache,
+            )
+        )
+        uvicorn.run(app, host=args.host, port=args.port)
     return 0

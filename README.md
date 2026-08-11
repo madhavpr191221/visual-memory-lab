@@ -61,7 +61,7 @@ Each case will show the query, the retrieved observation, the simulator ground t
 
 ## Current status
 
-Phases 1 through 3 are implemented. The repository can generate reproducible
+Phases 1 through 4 are implemented. The repository can generate reproducible
 MiniGrid inspection trajectories, search them with frozen CLIP ViT-B/32, and
 evaluate real-image place memory on 10,000 7-Scenes Office frames:
 
@@ -75,20 +75,27 @@ evaluate real-image place memory on 10,000 7-Scenes Office frames:
 - episode filtering, action context, and JSON query output.
 - official 6,000-memory / 4,000-query Office split;
 - camera-pose hit@1/5/10, coverage, pose error, random baseline, and stride-10 sensitivity;
-- seven cached VLM-assisted semantic place zones and 21 frozen text queries.
+- seven cached VLM-assisted semantic place zones and 21 frozen text queries;
+- a local React/TypeScript office-memory explorer backed by FastAPI;
+- text and uploaded-image retrieval with visible evidence and zone agreement;
+- evaluation, failure, query-detail, and place-zone browsers;
+- optional, explicitly confirmed VLM analysis over selected public evidence.
 
 On the strict 0.25 m / 30 degree criterion, 65.4% of held-out queries have a
 qualifying stored memory. Among those covered queries, exact CLIP retrieval
 reaches 32.2% hit@1, 48.3% hit@5, and 56.3% hit@10. The semantic-zone benchmark
 reaches 71.4% macro hit@10.
 
-The failure atlas and local interface remain later phases.
+The interface keeps ordinary retrieval local. Cloud analysis is a separate,
+confirmed action and remains disabled when no OpenAI API key is configured.
 
 The full research plan is available in [docs/visual_memory_lab_plan.md](docs/visual_memory_lab_plan.md).
 The Phase 2 design and real-model results are documented in
 [docs/phases/02_visual_memory.md](docs/phases/02_visual_memory.md).
 The real-image Phase 3 methodology, technician example, and complete results are
 documented in [docs/phases/03_real_image_place_memory.md](docs/phases/03_real_image_place_memory.md).
+The Phase 4 interface, evidence flow, privacy boundary, and technician example
+are documented in [docs/phases/04_office_memory_explorer.md](docs/phases/04_office_memory_explorer.md).
 
 ## Local setup
 
@@ -116,6 +123,20 @@ The Phase 3 data, indexing, labeling, and evaluation commands are documented in
 the Phase 3 document. `.env` is ignored; copy `.env.example` and set
 `OPENAI_API_KEY` only when generating a new frozen zone artifact. Evaluation is
 offline and never calls the OpenAI API.
+
+Build and run the Phase 4 interface with:
+
+```powershell
+Set-Location web
+npm install
+npm run build
+Set-Location ..
+uv run visual-memory-lab serve-ui
+```
+
+Then open `http://127.0.0.1:8000`. Search remains local. If `.env` contains an
+OpenAI API key, the interface offers a separate confirmation step before it
+sends a question and up to five selected public evidence frames for analysis.
 
 The default research run contains 10 episodes and 380 observations. Generated
 images, manifests, embeddings, and model weights remain local and are ignored
