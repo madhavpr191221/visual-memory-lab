@@ -446,8 +446,11 @@ agreement is a probability, or that this dataset supports real temporal-change
 claims. Similar workstations still cause perceptual aliasing, and missing route
 coverage remains a hard retrieval ceiling.
 
-The next meaningful extension is a dataset with repeated inspection rounds and
-real observable changes, not another interface layer.
+Phase 5 first isolates the alignment step: retrieve a comparable observation
+from one designated reference traversal and measure whether that traversal
+covered the query pose. After that bridge, the next meaningful extension is a
+dataset with ordered inspection rounds and real observable changes, not another
+interface layer.
 
 ## References and third-party use
 

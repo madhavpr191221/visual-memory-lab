@@ -150,10 +150,26 @@ query image. The detailed design is in
 [phases/04_office_memory_explorer.md](phases/04_office_memory_explorer.md).
 The combined Phase 3 and 4 system guide is the preferred end-to-end reference.
 
-## Phase 5 - Field-data bridge
+## Phase 5 - Cross-traversal revisit memory (implemented)
 
-Use the completed interface to test a second public or deliberately collected
-dataset with meaningful changes over time. This is where the project can add:
+Before comparing scene state, retrieve a comparable observation from a
+designated reference traversal. The implemented 7-Scenes protocol evaluates
+all 24 held-out-query to training-memory traversal pairs and reports:
+
+- strict and relaxed pose coverage inside each reference traversal;
+- traversal-conditioned CLIP hit@1/5/10;
+- random-within-traversal baselines;
+- covered-query and all-query-target rates;
+- micro, macro-pair, per-pair, and pose-error results.
+
+The system treats sequence IDs as traversal identifiers, not timestamps. See
+[`phases/05_cross_traversal_memory.md`](phases/05_cross_traversal_memory.md) for
+the complete protocol and measured results.
+
+## Phase 6 - State-change memory
+
+Use a second public, simulated, or deliberately collected dataset with
+meaningful changes over time. This is where the project can add:
 
 - real capture timestamps;
 - repeated inspection rounds;
@@ -162,7 +178,8 @@ dataset with meaningful changes over time. This is where the project can add:
 - evaluation of stale-memory and temporal-boundary failures.
 
 Do not infer these capabilities from 7-Scenes Office: its current manifests do
-not contain real calendar time or recorded maintenance events.
+not contain real calendar time, verified traversal chronology, or recorded
+maintenance events.
 
 ## Public project structure
 

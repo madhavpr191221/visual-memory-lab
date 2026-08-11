@@ -67,7 +67,7 @@ Each case will show the query, the retrieved observation, the simulator ground t
 
 ## Current status
 
-Phases 1 through 4 are implemented. The repository can generate reproducible
+Phases 1 through 5 are implemented. The repository can generate reproducible
 MiniGrid inspection trajectories, search them with frozen CLIP ViT-B/32, and
 evaluate real-image place memory on 10,000 7-Scenes Office frames:
 
@@ -86,16 +86,25 @@ evaluate real-image place memory on 10,000 7-Scenes Office frames:
 - text and uploaded-image retrieval with visible evidence and zone agreement;
 - evaluation, failure, query-detail, and place-zone browsers;
 - optional, explicitly confirmed VLM analysis over selected licensed-dataset evidence.
+- cross-traversal retrieval over 24 designated source-target traversal pairs;
+- separate measurement of reference-route coverage and retrieval quality.
 
 On the strict 0.25 m / 30 degree criterion, 65.4% of held-out queries have a
 qualifying stored memory. Among those covered queries, exact CLIP retrieval
 reaches 32.2% hit@1, 48.3% hit@5, and 56.3% hit@10. The semantic-zone benchmark
 reaches 71.4% macro hit@10.
 
+Phase 5 evaluates 24,000 query-target combinations. Strict pose coverage is
+17.1%; among covered combinations, traversal-conditioned CLIP reaches 36.8%
+Hit@1, 52.1% Hit@5, and 60.6% Hit@10, compared with 3.6%, 15.1%, and 27.1% for
+random selection within the same traversal.
+
 The interface keeps ordinary retrieval local. Cloud analysis is a separate,
 confirmed action and remains disabled when no OpenAI API key is configured.
 
 The full research plan is available in [docs/visual_memory_lab_plan.md](docs/visual_memory_lab_plan.md).
+The longer-term product and research thesis is documented in
+[Visual Memory Lab: Research and Application Direction](docs/visual_memory_lab_research_and_application_direction.md).
 The Phase 2 design and real-model results are documented in
 [docs/phases/02_visual_memory.md](docs/phases/02_visual_memory.md).
 The best single guide to the real-image system is
@@ -105,6 +114,8 @@ creation to local retrieval, zone voting, evidence analysis, and the React UI.
 The original [Phase 3 methodology](docs/phases/03_real_image_place_memory.md)
 and [Phase 4 interface notes](docs/phases/04_office_memory_explorer.md) remain as
 phase-specific references.
+The retrieval-and-alignment bridge is documented in
+[Phase 5: Cross-Traversal Revisit Memory](docs/phases/05_cross_traversal_memory.md).
 
 ## Dataset and model citations
 
@@ -153,6 +164,19 @@ The Phase 3 data, indexing, labeling, and evaluation commands are documented in
 the Phase 3 document. `.env` is ignored; copy `.env.example` and set
 `OPENAI_API_KEY` only when generating a new frozen zone artifact. Evaluation is
 offline and never calls the OpenAI API.
+
+Run the Phase 5 traversal-memory evaluation with:
+
+```powershell
+uv run visual-memory-lab evaluate-traversal-memory `
+  --memory-index outputs/phase3/train-index `
+  --query-index outputs/phase3/test-index `
+  --output outputs/phase5/traversal-evaluation `
+  --seed 42
+```
+
+This uses sequence IDs as traversal identifiers, not timestamps. It makes no
+claim that the 7-Scenes sequences are chronologically ordered.
 
 Build and run the Phase 4 interface with:
 
