@@ -68,7 +68,8 @@ describe("ChangesPage", () => {
     await waitFor(() => expect(screen.getByText("A box changed position")).toBeInTheDocument());
     expect(screen.getByRole("button", { name: "Visit 0 → Visit 1" })).toBeInTheDocument();
     expect(screen.getByText("Look at the highlighted area")).toBeInTheDocument();
-    expect(screen.getByText("Did the room geometry change here too?")).toBeInTheDocument();
+    expect(screen.getByText("Does the 3D scan support this movement?")).toBeInTheDocument();
+    expect(screen.getByText("Orange boxes are human-curated; no detector was used")).toBeInTheDocument();
     expect(screen.getByText("How did the comparison reach this result?")).toBeInTheDocument();
     expect(screen.queryByText("Visible box.")).not.toBeInTheDocument();
   });

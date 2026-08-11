@@ -589,8 +589,10 @@ relocation story at a time:
 5. the raw counts, full-room projections, threshold, and claim boundary remain
    available under **How did the comparison reach this result?**
 
-The highlighted RGB cases are human-curated presentation examples, not
-automatic object tracks or human-labelled benchmark ground truth. They make a
+The highlighted RGB cases and orange bounding boxes are manually curated
+presentation examples. No YOLO model or other object detector produced these
+boxes. They are not automatic object tracks or human-labelled benchmark ground
+truth. They make a
 specific limitation visible: the geometry can recover chair-shaped displaced
 regions, but the system does not yet assign persistent object identities.
 

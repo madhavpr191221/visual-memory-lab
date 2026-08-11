@@ -155,7 +155,8 @@ uv run visual-memory-lab serve-ui
 Open `http://127.0.0.1:8000/lab/changes` to compare consecutive office visits
 through three curated chair-relocation examples. The main view pairs
 highlighted RGB evidence with a focused 3D difference crop and states the
-object-identity limitation directly. Raw surface counts and full-room plots
+object-identity limitation directly. The orange image boxes are manually
+curated for this presentation; they are not detector predictions. Raw surface counts and full-room plots
 are kept in an expandable, plain-language diagnostics section; the complete
 six-pair and VLM reports remain in `outputs/phase6a/`.
 

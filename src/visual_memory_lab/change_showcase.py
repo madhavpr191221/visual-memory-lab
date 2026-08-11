@@ -99,7 +99,7 @@ def _render_cluster_crop(
     available = [points for points in (earlier, current) if len(points)]
     if not available:
         return False
-    figure, axes = plt.subplots(1, 2, figsize=(8, 3.6), constrained_layout=True)
+    figure, axes = plt.subplots(1, 2, figsize=(9.5, 4.4), constrained_layout=True)
     for axis, (a, b, labels) in zip(
         axes,
         ((0, 1, ("left / right", "front / back")), (0, 2, ("left / right", "height"))),
@@ -117,10 +117,11 @@ def _render_cluster_crop(
         axis.set_ylim(low[1] - margin[1], high[1] + margin[1])
         axis.set_xlabel(labels[0])
         axis.set_ylabel(labels[1])
+        axis.tick_params(labelsize=10)
         axis.grid(alpha=0.16)
         axis.set_aspect("equal", adjustable="box")
-    axes[0].legend(frameon=False, loc="best")
-    figure.suptitle("Coarse 3D difference region")
+    axes[0].legend(frameon=False, loc="best", fontsize=10)
+    figure.suptitle("Coarse 3D difference region", fontsize=15)
     output.parent.mkdir(parents=True, exist_ok=True)
     figure.savefig(output, dpi=150, facecolor="white")
     plt.close(figure)

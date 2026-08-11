@@ -78,7 +78,7 @@ function ChangeStory({ item, pair, data }: { item: ChangeCase; pair: ChangePair;
     <section className={styles.section}>
       <div className={styles.resultHeader}>
         <div><span className="eyebrow">Visible evidence</span><h2>Look at the highlighted area</h2></div>
-        <span>Open either image to inspect it at full size</span>
+        <span>Orange boxes are human-curated; no detector was used</span>
       </div>
       <div className={styles.focusCompare}>
         <FocusImage title={`Earlier · Visit ${item.earlier_observation}`} frame={item.earlier_frame} src={item.earlier_image_url} box={item.earlier_box} label="Area before" />
@@ -90,7 +90,7 @@ function ChangeStory({ item, pair, data }: { item: ChangeCase; pair: ChangePair;
 
     <section className={styles.section}>
       <div className={styles.resultHeader}>
-        <div><span className="eyebrow">3D check</span><h2>Did the room geometry change here too?</h2></div>
+        <div><span className="eyebrow">3D check</span><h2>Does the 3D scan support this movement?</h2></div>
       </div>
       <div className={`panel ${styles.geometryStory}`}>
         <img src={item.geometry_url} alt={`Focused 3D difference for visits ${item.earlier_observation} and ${item.current_observation}`} />
