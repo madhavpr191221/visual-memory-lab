@@ -142,6 +142,70 @@ def build_parser() -> argparse.ArgumentParser:
     review_change.add_argument("--cache-dir", type=Path, default=Path("outputs/phase6a/vlm-cache"))
     review_change.add_argument("--model", default="gpt-5.6-terra")
 
+    localize_objects = subparsers.add_parser(
+        "localize-eth-objects",
+        help="detect and segment movable objects in dense ETH Office keyframes",
+    )
+    localize_objects.add_argument("--input", type=Path, required=True)
+    localize_objects.add_argument("--output", type=Path, required=True)
+    localize_objects.add_argument(
+        "--keyframes-per-observation", type=_positive_integer, default=96
+    )
+    localize_objects.add_argument("--device", default="auto")
+    localize_objects.add_argument(
+        "--detector-model", default="IDEA-Research/grounding-dino-tiny"
+    )
+    localize_objects.add_argument(
+        "--segmenter-model", default="facebook/sam2.1-hiera-small"
+    )
+    localize_objects.add_argument("--box-threshold", type=_positive_float, default=0.25)
+    localize_objects.add_argument("--text-threshold", type=_positive_float, default=0.20)
+    localize_objects.add_argument("--nms-iou", type=_positive_float, default=0.50)
+    localize_objects.add_argument("--max-detections", type=_positive_integer, default=20)
+
+    audit_objects = subparsers.add_parser(
+        "audit-eth-object-localization",
+        help="create a cached VLM pseudo-audit of Phase 6B1 predictions",
+    )
+    audit_objects.add_argument("--localization", type=Path, required=True)
+    audit_objects.add_argument("--output", type=Path, required=True)
+    audit_objects.add_argument(
+        "--cache-dir", type=Path, default=Path("outputs/phase6b1/vlm-cache")
+    )
+    audit_objects.add_argument(
+        "--frames-per-observation", type=_positive_integer, default=12
+    )
+    audit_objects.add_argument("--model", default="gpt-5.6-terra")
+
+    rgbd = subparsers.add_parser(
+        "build-eth-rgbd-evidence",
+        help="link frozen ETH Office masks to recorded RGB-coloured point clouds",
+    )
+    rgbd.add_argument("--input", type=Path, required=True)
+    rgbd.add_argument("--localization", type=Path, required=True)
+    rgbd.add_argument("--output", type=Path, required=True)
+
+    associate = subparsers.add_parser(
+        "associate-eth-objects",
+        help="rank cautious same-object candidates across ETH Office visits",
+    )
+    associate.add_argument("--localization", type=Path, required=True)
+    associate.add_argument("--rgbd-evidence", type=Path, required=True)
+    associate.add_argument("--output", type=Path, required=True)
+    associate.add_argument("--device", default="auto")
+    associate.add_argument("--top-per-group", type=_positive_integer, default=200)
+
+    audit_associate = subparsers.add_parser(
+        "audit-eth-object-associations",
+        help="VLM pseudo-audit the highest-ranked cross-visit candidates",
+    )
+    audit_associate.add_argument("--associations", type=Path, required=True)
+    audit_associate.add_argument("--localization", type=Path, required=True)
+    audit_associate.add_argument("--output", type=Path, required=True)
+    audit_associate.add_argument("--cache-dir", type=Path, default=Path("outputs/phase613/vlm-cache"))
+    audit_associate.add_argument("--model", default="gpt-5.6-terra")
+    audit_associate.add_argument("--limit", type=_positive_integer, default=200)
+
     serve = subparsers.add_parser(
         "serve-ui",
         help="serve the local React office-memory explorer",
@@ -161,6 +225,26 @@ def build_parser() -> argparse.ArgumentParser:
     serve.add_argument("--web-dist", type=Path, default=Path("web/dist"))
     serve.add_argument("--analysis-cache", type=Path, default=Path("outputs/phase4/vlm-cache"))
     serve.add_argument("--analysis-model", default="gpt-5.6-terra")
+    serve.add_argument("--change-audit", type=Path, default=Path("outputs/phase6a/office-audit"))
+    serve.add_argument("--change-baseline", type=Path, default=Path("outputs/phase6a/change-baseline"))
+    serve.add_argument("--change-review", type=Path, default=Path("outputs/phase6a/vlm-review"))
+    serve.add_argument(
+        "--object-localization",
+        type=Path,
+        default=Path("outputs/phase6b1/object-localization"),
+    )
+    serve.add_argument(
+        "--object-audit", type=Path, default=Path("outputs/phase6b1/vlm-audit")
+    )
+    serve.add_argument(
+        "--rgbd-evidence", type=Path, default=Path("outputs/phase612/rgbd-evidence")
+    )
+    serve.add_argument(
+        "--associations", type=Path, default=Path("outputs/phase613/associations")
+    )
+    serve.add_argument(
+        "--association-audit", type=Path, default=Path("outputs/phase613/vlm-audit")
+    )
     serve.add_argument("--device", default="auto")
     serve.add_argument("--host", default="127.0.0.1")
     serve.add_argument("--port", type=_positive_integer, default=8000)
@@ -369,6 +453,14 @@ def main(argv: Sequence[str] | None = None) -> int:
                 verify_source=args.verify_source,
                 analysis_model=args.analysis_model,
                 analysis_cache=args.analysis_cache,
+                change_audit=args.change_audit,
+                change_baseline=args.change_baseline,
+                change_review=args.change_review,
+                object_localization=args.object_localization,
+                object_audit=args.object_audit,
+                rgbd_evidence=args.rgbd_evidence,
+                associations=args.associations,
+                association_audit=args.association_audit,
             )
         )
         uvicorn.run(app, host=args.host, port=args.port)
@@ -441,4 +533,91 @@ def main(argv: Sequence[str] | None = None) -> int:
             f"Reviewed {summary['reviewed_candidate_count']} geometric candidates and accepted "
             f"{summary['accepted_pseudo_reference_count']} into the VLM pseudo-reference"
         )
+    elif args.command == "localize-eth-objects":
+        from visual_memory_lab.object_localization import localize_eth_objects
+
+        try:
+            summary = localize_eth_objects(
+                dataset_root=args.input,
+                output=args.output,
+                keyframes_per_observation=args.keyframes_per_observation,
+                device=args.device,
+                detector_model=args.detector_model,
+                segmenter_model=args.segmenter_model,
+                box_threshold=args.box_threshold,
+                text_threshold=args.text_threshold,
+                nms_iou=args.nms_iou,
+                max_detections=args.max_detections,
+            )
+        except (FileExistsError, OSError, RuntimeError, ValueError) as error:
+            parser.error(str(error))
+        print(
+            f"Localized {summary.detection_count} object predictions across "
+            f"{summary.frame_count} ETH Office keyframes on {summary.device} in {summary.output}"
+        )
+    elif args.command == "audit-eth-object-localization":
+        from visual_memory_lab.object_audit import audit_eth_object_localization
+
+        try:
+            summary = audit_eth_object_localization(
+                localization=args.localization,
+                output=args.output,
+                cache_dir=args.cache_dir,
+                frames_per_observation=args.frames_per_observation,
+                model=args.model,
+            )
+        except (FileExistsError, OSError, RuntimeError, ValueError) as error:
+            parser.error(str(error))
+        print(
+            f"Pseudo-audited {summary['reviewed_detection_count']} detections across "
+            f"{summary['frame_count']} fixed ETH Office frames"
+        )
+    elif args.command == "build-eth-rgbd-evidence":
+        from visual_memory_lab.rgbd_evidence import build_rgbd_evidence
+
+        try:
+            summary = build_rgbd_evidence(
+                dataset_root=args.input,
+                localization=args.localization,
+                output=args.output,
+            )
+        except (FileExistsError, OSError, ValueError) as error:
+            parser.error(str(error))
+        print(
+            f"Built {summary['evidence_count']} RGB-D evidence records; "
+            f"{summary['nonempty_evidence_count']} contain point-cloud evidence "
+            f"in {args.output.resolve()}"
+        )
+    elif args.command == "associate-eth-objects":
+        from visual_memory_lab.object_association import associate_eth_objects
+
+        try:
+            summary = associate_eth_objects(
+                localization=args.localization,
+                rgbd_evidence=args.rgbd_evidence,
+                output=args.output,
+                device=args.device,
+                top_per_group=args.top_per_group,
+            )
+        except (FileExistsError, OSError, RuntimeError, ValueError) as error:
+            parser.error(str(error))
+        print(
+            f"Ranked {summary['pair_count']} cross-visit candidates from "
+            f"{summary['detection_count']} detections on {summary['device']}"
+        )
+    elif args.command == "audit-eth-object-associations":
+        from visual_memory_lab.association_audit import audit_associations
+
+        try:
+            summary = audit_associations(
+                associations=args.associations,
+                localization=args.localization,
+                output=args.output,
+                cache_dir=args.cache_dir,
+                model=args.model,
+                limit=args.limit,
+            )
+        except (FileExistsError, OSError, RuntimeError, ValueError) as error:
+            parser.error(str(error))
+        print(f"Pseudo-audited {summary['reviewed_count']} association candidates")
     return 0

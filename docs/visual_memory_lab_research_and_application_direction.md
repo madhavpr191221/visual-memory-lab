@@ -771,7 +771,7 @@ captured.
 
 ## Candidate research progression
 
-### Phase 6A: Controlled 3D state-change baseline (implemented)
+### Current direction: object-aware office memory
 
 - adopted four logically ordered, aligned RGB-D/3D observations from the ETH
   ASL Change Detection Office dataset;
@@ -783,9 +783,13 @@ captured.
 - documented fragmentation, reconstruction boundaries, missing coverage, and
   VLM uncertainty without claiming human-labelled accuracy.
 
-### Phase 6B: Learned improvement for a measured bottleneck
+The current implementation starts with frozen RGB object localization and
+inspectable evidence. Depth, 3D placement, and temporal change reasoning will
+be added only when they answer a concrete user question.
 
-- freeze the Phase 6A geometry and reports as the baseline;
+### Later learned improvement for a measured bottleneck
+
+- freeze the current evidence and reports as the baseline;
 - select cluster association, correspondence, or RGB-D candidate
   classification based on the measured failure distribution;
 - train on a separately labelled or synthetic source;

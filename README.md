@@ -2,9 +2,10 @@
 
 Visual Memory Lab is a small research project about finding useful evidence in a history of images. It now works with both controlled MiniGrid trajectories and the publicly available 7-Scenes Office research dataset.
 
-Phase 6A also evaluates controlled real-scene change using four RGB-D/3D
-observations from ETH Zurich's public Change Detection Office dataset. The
-dataset itself is not redistributed.
+The current Phase 6.1 work adds automatic RGB object localization over 384 dense office
+keyframes. Frozen Grounding DINO predictions and SAM 2.1 masks replace the
+hand-drawn boxes used in the earlier change showcase. The dataset itself is not
+redistributed.
 
 > **Research-use notice:** 7-Scenes is provided by Microsoft Research for
 > non-commercial use. This repository is a personal research and portfolio
@@ -71,7 +72,7 @@ Each case will show the query, the retrieved observation, the simulator ground t
 
 ## Current status
 
-Phases 1 through 5 are implemented. The repository can generate reproducible
+Phases 1 through 5 and the first Phase 6.1 object-localization step are implemented. The repository can generate reproducible
 MiniGrid inspection trajectories, search them with frozen CLIP ViT-B/32, and
 evaluate real-image place memory on 10,000 7-Scenes Office frames:
 
@@ -92,6 +93,9 @@ evaluate real-image place memory on 10,000 7-Scenes Office frames:
 - optional, explicitly confirmed VLM analysis over selected licensed-dataset evidence.
 - cross-traversal retrieval over 24 designated source-target traversal pairs;
 - separate measurement of reference-route coverage and retrieval quality.
+- automatic chair, waste-bin, and box localization over four ETH Office visits;
+- inspectable detector boxes, segmentation masks, confidence filters, and a
+  sampled VLM pseudo-audit in the Objects UI.
 
 On the strict 0.25 m / 30 degree criterion, 65.4% of held-out queries have a
 qualifying stored memory. Among those covered queries, exact CLIP retrieval
@@ -121,27 +125,69 @@ phase-specific references.
 The retrieval-and-alignment bridge is documented in
 [Phase 5: Cross-Traversal Revisit Memory](docs/phases/05_cross_traversal_memory.md).
 
-[Phase 6A: Controlled 3D State-Change Baseline](docs/phases/06a_controlled_3d_change_baseline.md).
+For a user-facing catalogue of supported, planned, and unsupported questions,
+see [What Can a User Ask the Visual Memory Lab?](docs/user_question_catalog.md).
 
-Phase 6A extracts 96 browsable RGB frames, compares all six aligned mesh pairs,
-and produces inspectable geometric candidates. Its VLM output is explicitly a
-pseudo-reference rather than human ground truth. The acceptance run produced
-917 raw clusters; 72 large candidates were reviewed, and 47 medium/high-confidence
-candidates entered the pseudo-reference. The compact frozen counts are in
-[`artifacts/phase6a/summary.json`](artifacts/phase6a/summary.json).
+The current object-localization baseline is documented in
+[Phase 6.1.1: Automatic Object Localization](docs/phases/06_1_object_localization.md).
+The RGB-D evidence and visit-comparison step is documented in
+[Phase 6.1.2: RGB-D Object Evidence](docs/phases/06_1_2_rgbd_object_evidence.md).
+The candidate identity-association step is documented in
+[Phase 6.1.3: Cross-Visit Object Association](docs/phases/06_1_3_cross_visit_object_association.md).
+The broader object-aware memory design is documented in
+[Phase 6.1: Object-Aware Change Memory](docs/phases/06_1_object_aware_change_memory.md).
+The high-level roadmap is in
+[Phase 6.1 overview](docs/phases/06_1_overview.md).
+Its CUDA acceptance run processed 384 keyframes and retained 1,417 predictions:
+515 chairs, 477 waste bins, and 425 boxes. These are predictions, not correct
+object counts. The completed VLM audit reviewed all 48 requested frames and
+found substantial false positives: 79 supported, 15 uncertain, and 71
+unsupported predictions. Frozen counts and the pseudo-audit boundary are in
+[`artifacts/phase6b1/summary.json`](artifacts/phase6b1/summary.json).
 
-Prepare and view the ETH Office observations:
+To use the React showcase:
 
 ```powershell
-uv run visual-memory-lab prepare-eth-office `
-  --input data/eth-change-detection/office/office `
-  --output outputs/phase6a/office-audit `
-  --rgb-samples 24 `
-  --vlm-samples 8
+cd web
+npm run build
+cd ..
+uv run --extra cuda visual-memory-lab serve-ui
 ```
 
-Then open `outputs/phase6a/office-audit/index.html` in a browser. The complete
-geometry and VLM commands are documented in the Phase 6A guide.
+Open `http://127.0.0.1:8000/lab/objects` to browse model-generated object
+evidence. The page filters 384 dense office keyframes by visit, object class,
+detector score, and optional VLM audit status; it can show raw images, boxes,
+masks, or both. These boxes are Grounding DINO predictions and the masks are
+SAM 2.1 predictions. They are not hand-drawn annotations and do not establish
+object identity across visits. Cross-visit identity is intentionally not claimed.
+
+Open `http://127.0.0.1:8000/lab/object-evidence` to compare visible RGB-D
+evidence for an object class across two logical visits.
+Open `http://127.0.0.1:8000/lab/object-association` to inspect ranked candidate
+matches across visits.
+
+Generate the Phase 6.1.1 artifact on an NVIDIA GPU with:
+
+```powershell
+uv sync --extra cuda
+uv run --extra cuda visual-memory-lab localize-eth-objects `
+  --input data/eth-change-detection/office/office `
+  --output outputs/phase6b1/object-localization `
+  --keyframes-per-observation 96 `
+  --device cuda
+```
+
+The optional 48-frame VLM pseudo-audit and full method are documented in the
+Phase 6.1.1 guide.
+
+Build the Phase 6.1.2 RGB-D evidence artifact with:
+
+```powershell
+uv run visual-memory-lab build-eth-rgbd-evidence `
+  --input data/eth-change-detection/office/office `
+  --localization outputs/phase6b1/object-localization `
+  --output outputs/phase612/rgbd-evidence
+```
 
 ## Dataset and model citations
 
@@ -161,6 +207,13 @@ referencing the project:
   Dense Reconstruction and Dynamic Object Discovery.” *ICRA*, 2017.
   [Paper](https://cesarcadena.ethz.ch/files/ICRA2017_mfehr.pdf) ·
   [ETH dataset page](https://projects.asl.ethz.ch/datasets/change-detection/)
+- Shilong Liu et al. “Grounding DINO: Marrying DINO with Grounded Pre-Training
+  for Open-Set Object Detection.” *ECCV*, 2024.
+  [Paper](https://arxiv.org/abs/2303.05499) ·
+  [official repository](https://github.com/IDEA-Research/GroundingDINO)
+- Nikhila Ravi et al. “SAM 2: Segment Anything in Images and Videos.” 2024.
+  [Paper](https://arxiv.org/abs/2408.00714) ·
+  [official repository](https://github.com/facebookresearch/sam2)
 
 The [7-Scenes dataset page and license](https://www.microsoft.com/en-us/research/project/rgb-d-dataset-7-scenes/)
 restrict the dataset to non-commercial use. CLIP code is published under the
@@ -215,7 +268,7 @@ Set-Location web
 npm install
 npm run build
 Set-Location ..
-uv run visual-memory-lab serve-ui
+uv run --extra cuda visual-memory-lab serve-ui
 ```
 
 Then open `http://127.0.0.1:8000`. Search remains local. If `.env` contains an

@@ -18,6 +18,10 @@ from PIL import Image, UnidentifiedImageError
 from pydantic import ValidationError
 
 from visual_memory_lab import __version__
+from visual_memory_lab.change_showcase import ChangeShowcase
+from visual_memory_lab.object_showcase import ObjectShowcase
+from visual_memory_lab.association_showcase import AssociationShowcase
+from visual_memory_lab.rgbd_showcase import RgbdShowcase
 from visual_memory_lab.api_models import (
     AnalysisRequest,
     AnalysisResponse,
@@ -49,6 +53,14 @@ class AppConfig:
     verify_source: bool = False
     analysis_model: str = "gpt-5.6-terra"
     analysis_cache: Path = Path("outputs/phase4/vlm-cache")
+    change_audit: Path = Path("outputs/phase6a/office-audit")
+    change_baseline: Path = Path("outputs/phase6a/change-baseline")
+    change_review: Path = Path("outputs/phase6a/vlm-review")
+    object_localization: Path = Path("outputs/phase6b1/object-localization")
+    object_audit: Path = Path("outputs/phase6b1/vlm-audit")
+    rgbd_evidence: Path = Path("outputs/phase612/rgbd-evidence")
+    associations: Path = Path("outputs/phase613/associations")
+    association_audit: Path = Path("outputs/phase613/vlm-audit")
 
 
 @dataclass
@@ -57,6 +69,10 @@ class AppResources:
     memory: MemoryStore
     queries: MemoryStore
     analysis: object | None = None
+    changes: ChangeShowcase | None = None
+    objects: ObjectShowcase | None = None
+    rgbd: RgbdShowcase | None = None
+    associations: AssociationShowcase | None = None
 
 
 def load_resources(config: AppConfig) -> AppResources:
@@ -80,7 +96,50 @@ def load_resources(config: AppConfig) -> AppResources:
             model=config.analysis_model,
             cache_dir=config.analysis_cache,
         )
-    return AppResources(service=service, memory=memory, queries=queries, analysis=analysis)
+    changes = None
+    try:
+        changes = ChangeShowcase.load(
+            audit=config.change_audit,
+            baseline=config.change_baseline,
+            review=config.change_review,
+        )
+    except FileNotFoundError:
+        pass
+    associations = None
+    try:
+        associations = AssociationShowcase.load(
+            associations=config.associations,
+            localization=config.object_localization,
+            audit=config.association_audit,
+        )
+    except FileNotFoundError:
+        pass
+    objects = None
+    try:
+        objects = ObjectShowcase.load(
+            localization=config.object_localization,
+            audit=config.object_audit,
+        )
+    except FileNotFoundError:
+        pass
+    rgbd = None
+    try:
+        rgbd = RgbdShowcase.load(
+            evidence=config.rgbd_evidence,
+            localization=config.object_localization,
+        )
+    except FileNotFoundError:
+        pass
+    return AppResources(
+        service=service,
+        memory=memory,
+        queries=queries,
+        analysis=analysis,
+        changes=changes,
+        objects=objects,
+        rgbd=rgbd,
+        associations=associations,
+    )
 
 
 async def _read_upload(upload: UploadFile) -> Image.Image:
@@ -249,6 +308,61 @@ def create_app(
     @app.get("/api/evaluation")
     def evaluation() -> dict[str, object]:
         return current().service.evaluation.metrics
+
+    @app.get("/api/phase6a")
+    def phase6a() -> dict[str, object]:
+        changes = current().changes
+        if changes is None:
+            raise HTTPException(status_code=404, detail="Phase 6A artifacts are unavailable")
+        return changes.payload
+
+    @app.get("/api/phase6a/images/{image_id}")
+    def phase6a_image(image_id: str) -> FileResponse:
+        changes = current().changes
+        if changes is None:
+            raise HTTPException(status_code=404, detail="Phase 6A artifacts are unavailable")
+        try:
+            path = changes.image_path(image_id)
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        return FileResponse(path, content_disposition_type="inline")
+
+    @app.get("/api/phase6b1")
+    def phase6b1() -> dict[str, object]:
+        objects = current().objects
+        if objects is None:
+            raise HTTPException(
+                status_code=404,
+                detail=(
+                    "Phase 6B1 artifacts are unavailable; run localize-eth-objects first"
+                ),
+            )
+        return objects.payload
+
+    @app.get("/api/phase6b1/images/{image_id}")
+    def phase6b1_image(image_id: str) -> FileResponse:
+        objects = current().objects
+        if objects is None:
+            raise HTTPException(status_code=404, detail="Phase 6B1 artifacts are unavailable")
+        try:
+            path = objects.image_path(image_id)
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        return FileResponse(path, content_disposition_type="inline")
+
+    @app.get("/api/phase612")
+    def phase612() -> dict[str, object]:
+        evidence = current().rgbd
+        if evidence is None:
+            raise HTTPException(status_code=404, detail="Phase 6.1.2 RGB-D evidence is unavailable")
+        return evidence.payload
+
+    @app.get("/api/phase613")
+    def phase613() -> dict[str, object]:
+        associations = current().associations
+        if associations is None:
+            raise HTTPException(status_code=404, detail="Phase 6.1.3 associations are unavailable")
+        return associations.payload
 
     @app.get("/api/queries")
     def queries(
