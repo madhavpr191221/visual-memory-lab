@@ -248,3 +248,42 @@ export interface Phase6b1Showcase {
   audit: ObjectAuditSummary | null;
   frames: ObjectFrame[];
 }
+
+export interface RgbdEvidence {
+  detection_id: string;
+  frame_id: string;
+  observation: number;
+  message_index: number;
+  canonical_class: ObjectClass;
+  point_count: number;
+  centroid_world_m: [number | null, number | null, number | null];
+  extent_world_m: { minimum: [number | null, number | null, number | null]; maximum: [number | null, number | null, number | null] };
+  evidence_method: string;
+  claim_boundary: string;
+  score: number;
+  mask_score: number;
+  mask_area_fraction: number;
+  image_url: string;
+  mask_url: string;
+  width: number;
+  height: number;
+}
+
+export interface RgbdComparison {
+  id: string;
+  earlier_observation: number;
+  later_observation: number;
+  object_class: ObjectClass;
+  earlier: RgbdEvidence;
+  later: RgbdEvidence;
+  interpretation: string;
+}
+
+export interface Phase612Showcase {
+  phase: string;
+  dataset: string;
+  claim_boundary: string;
+  metrics: { frame_count: number; detection_count: number; evidence_count: number; nonempty_evidence_count: number };
+  classes: ObjectClass[];
+  comparisons: RgbdComparison[];
+}

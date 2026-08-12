@@ -6,6 +6,7 @@ import type {
   Zone,
   Phase6aShowcase,
   Phase6b1Showcase,
+  Phase612Showcase,
 } from "./types";
 
 export class ApiError extends Error {
@@ -49,6 +50,7 @@ export const api = {
   evaluation: () => request<Record<string, unknown>>("/api/evaluation"),
   phase6a: () => request<Phase6aShowcase>("/api/phase6a"),
   phase6b1: () => request<Phase6b1Showcase>("/api/phase6b1"),
+  phase612: () => request<Phase612Showcase>("/api/phase612"),
   zones: () => request<Zone[]>("/api/zones"),
   zone: (slug: string) => request<Zone>(`/api/zones/${encodeURIComponent(slug)}`),
   queries: (offset: number, tag: string) => {

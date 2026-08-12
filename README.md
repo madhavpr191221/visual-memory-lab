@@ -130,6 +130,8 @@ see [What Can a User Ask the Visual Memory Lab?](docs/user_question_catalog.md).
 
 The current object-localization baseline is documented in
 [Phase 6.1.1: Automatic Object Localization](docs/phases/06_1_object_localization.md).
+The RGB-D evidence and visit-comparison step is documented in
+[Phase 6.1.2: RGB-D Object Evidence](docs/phases/06_1_2_rgbd_object_evidence.md).
 The broader object-aware memory design is documented in
 [Phase 6.1: Object-Aware Change Memory](docs/phases/06_1_object_aware_change_memory.md).
 The high-level roadmap is in
@@ -157,6 +159,9 @@ masks, or both. These boxes are Grounding DINO predictions and the masks are
 SAM 2.1 predictions. They are not hand-drawn annotations and do not establish
 object identity across visits. Cross-visit identity is intentionally not claimed.
 
+Open `http://127.0.0.1:8000/lab/object-evidence` to compare visible RGB-D
+evidence for an object class across two logical visits.
+
 Generate the Phase 6.1.1 artifact on an NVIDIA GPU with:
 
 ```powershell
@@ -170,6 +175,15 @@ uv run --extra cuda visual-memory-lab localize-eth-objects `
 
 The optional 48-frame VLM pseudo-audit and full method are documented in the
 Phase 6.1.1 guide.
+
+Build the Phase 6.1.2 RGB-D evidence artifact with:
+
+```powershell
+uv run visual-memory-lab build-eth-rgbd-evidence `
+  --input data/eth-change-detection/office/office `
+  --localization outputs/phase6b1/object-localization `
+  --output outputs/phase612/rgbd-evidence
+```
 
 ## Dataset and model citations
 

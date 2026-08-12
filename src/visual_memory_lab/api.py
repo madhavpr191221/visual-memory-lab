@@ -20,6 +20,7 @@ from pydantic import ValidationError
 from visual_memory_lab import __version__
 from visual_memory_lab.change_showcase import ChangeShowcase
 from visual_memory_lab.object_showcase import ObjectShowcase
+from visual_memory_lab.rgbd_showcase import RgbdShowcase
 from visual_memory_lab.api_models import (
     AnalysisRequest,
     AnalysisResponse,
@@ -56,6 +57,7 @@ class AppConfig:
     change_review: Path = Path("outputs/phase6a/vlm-review")
     object_localization: Path = Path("outputs/phase6b1/object-localization")
     object_audit: Path = Path("outputs/phase6b1/vlm-audit")
+    rgbd_evidence: Path = Path("outputs/phase612/rgbd-evidence")
 
 
 @dataclass
@@ -66,6 +68,7 @@ class AppResources:
     analysis: object | None = None
     changes: ChangeShowcase | None = None
     objects: ObjectShowcase | None = None
+    rgbd: RgbdShowcase | None = None
 
 
 def load_resources(config: AppConfig) -> AppResources:
@@ -106,6 +109,14 @@ def load_resources(config: AppConfig) -> AppResources:
         )
     except FileNotFoundError:
         pass
+    rgbd = None
+    try:
+        rgbd = RgbdShowcase.load(
+            evidence=config.rgbd_evidence,
+            localization=config.object_localization,
+        )
+    except FileNotFoundError:
+        pass
     return AppResources(
         service=service,
         memory=memory,
@@ -113,6 +124,7 @@ def load_resources(config: AppConfig) -> AppResources:
         analysis=analysis,
         changes=changes,
         objects=objects,
+        rgbd=rgbd,
     )
 
 
@@ -323,6 +335,13 @@ def create_app(
         except KeyError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
         return FileResponse(path, content_disposition_type="inline")
+
+    @app.get("/api/phase612")
+    def phase612() -> dict[str, object]:
+        evidence = current().rgbd
+        if evidence is None:
+            raise HTTPException(status_code=404, detail="Phase 6.1.2 RGB-D evidence is unavailable")
+        return evidence.payload
 
     @app.get("/api/queries")
     def queries(

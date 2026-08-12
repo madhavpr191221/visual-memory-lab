@@ -6,6 +6,7 @@ import { QueryDetailPage } from "./pages/QueryDetailPage";
 import { ZoneDetailPage } from "./pages/ZoneDetailPage";
 import { ZonesPage } from "./pages/ZonesPage";
 import { ObjectsPage } from "./pages/ObjectsPage";
+import { RgbdEvidencePage } from "./pages/RgbdEvidencePage";
 import styles from "./App.module.css";
 
 function Layout() {
@@ -25,6 +26,7 @@ function Layout() {
           <NavLink to="/lab/failures">Failures</NavLink>
           <NavLink to="/lab/zones">Zones</NavLink>
           <NavLink to="/lab/objects">Objects</NavLink>
+          <NavLink to="/lab/object-evidence">3D evidence</NavLink>
         </nav>
       </header>
       <main className={styles.main}><Outlet /></main>
@@ -46,6 +48,7 @@ export default function App() {
         <Route path="lab/zones" element={<ZonesPage />} />
         <Route path="lab/zones/:zoneSlug" element={<ZoneDetailPage />} />
         <Route path="lab/objects" element={<ObjectsPage />} />
+        <Route path="lab/object-evidence" element={<RgbdEvidencePage />} />
         <Route path="lab/changes" element={<Navigate to="/lab/objects" replace />} />
       </Route>
     </Routes>

@@ -142,7 +142,7 @@ model. It will not automatically establish object identity or movement.
 
 ### Status
 
-Planned. The detailed design will be written when implementation begins.
+Implemented. See [Phase 6.1.2: RGB-D Object Evidence](06_1_2_rgbd_object_evidence.md).
 
 ### Results to record
 

@@ -177,6 +177,14 @@ def build_parser() -> argparse.ArgumentParser:
     )
     audit_objects.add_argument("--model", default="gpt-5.6-terra")
 
+    rgbd = subparsers.add_parser(
+        "build-eth-rgbd-evidence",
+        help="link frozen ETH Office masks to recorded RGB-coloured point clouds",
+    )
+    rgbd.add_argument("--input", type=Path, required=True)
+    rgbd.add_argument("--localization", type=Path, required=True)
+    rgbd.add_argument("--output", type=Path, required=True)
+
     serve = subparsers.add_parser(
         "serve-ui",
         help="serve the local React office-memory explorer",
@@ -206,6 +214,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     serve.add_argument(
         "--object-audit", type=Path, default=Path("outputs/phase6b1/vlm-audit")
+    )
+    serve.add_argument(
+        "--rgbd-evidence", type=Path, default=Path("outputs/phase612/rgbd-evidence")
     )
     serve.add_argument("--device", default="auto")
     serve.add_argument("--host", default="127.0.0.1")
@@ -420,6 +431,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 change_review=args.change_review,
                 object_localization=args.object_localization,
                 object_audit=args.object_audit,
+                rgbd_evidence=args.rgbd_evidence,
             )
         )
         uvicorn.run(app, host=args.host, port=args.port)
@@ -530,5 +542,21 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(
             f"Pseudo-audited {summary['reviewed_detection_count']} detections across "
             f"{summary['frame_count']} fixed ETH Office frames"
+        )
+    elif args.command == "build-eth-rgbd-evidence":
+        from visual_memory_lab.rgbd_evidence import build_rgbd_evidence
+
+        try:
+            summary = build_rgbd_evidence(
+                dataset_root=args.input,
+                localization=args.localization,
+                output=args.output,
+            )
+        except (FileExistsError, OSError, ValueError) as error:
+            parser.error(str(error))
+        print(
+            f"Built {summary['evidence_count']} RGB-D evidence records; "
+            f"{summary['nonempty_evidence_count']} contain point-cloud evidence "
+            f"in {args.output.resolve()}"
         )
     return 0
