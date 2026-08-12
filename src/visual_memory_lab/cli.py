@@ -9,7 +9,6 @@ from pathlib import Path
 
 from visual_memory_lab import __version__
 from visual_memory_lab.memory import MemoryIndex, build_index, ensure_matching_encoder
-from visual_memory_lab.trajectory import GenerationConfig, generate_trajectories
 
 
 def _positive_integer(value: str) -> int:
@@ -36,23 +35,14 @@ def _positive_float(value: str) -> float:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="visual-memory-lab",
-        description="Build and evaluate simulator or real-image visual memories.",
+        description="Build and evaluate real-world visual memories.",
     )
     parser.add_argument("--version", action="version", version=__version__)
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    generate = subparsers.add_parser(
-        "generate",
-        help="generate reproducible simulator trajectories",
-    )
-    generate.add_argument("--episodes", type=_positive_integer, default=10)
-    generate.add_argument("--seed", type=int, default=42)
-    generate.add_argument("--max-steps", type=_positive_integer, default=100)
-    generate.add_argument("--output", type=Path, required=True)
-
     index = subparsers.add_parser(
         "index",
-        help="build a frozen CLIP index over a generated trajectory",
+        help="build a frozen CLIP index over an image-memory artifact",
     )
     index.add_argument("--input", type=Path, required=True)
     index.add_argument("--output", type=Path, required=True)
@@ -61,7 +51,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     query = subparsers.add_parser(
         "query",
-        help="retrieve observations from a visual-memory index",
+        help="retrieve observations from a real-world visual-memory index",
     )
     query.add_argument("--index", type=Path, required=True)
     query_input = query.add_mutually_exclusive_group(required=True)
@@ -118,29 +108,6 @@ def build_parser() -> argparse.ArgumentParser:
     prepare_eth.add_argument("--output", type=Path, required=True)
     prepare_eth.add_argument("--rgb-samples", type=_positive_integer, default=24)
     prepare_eth.add_argument("--vlm-samples", type=_positive_integer, default=8)
-
-    evaluate_change = subparsers.add_parser(
-        "evaluate-eth-change",
-        help="produce deterministic change candidates from aligned ETH Office meshes",
-    )
-    evaluate_change.add_argument("--manifest", type=Path, required=True)
-    evaluate_change.add_argument("--output", type=Path, required=True)
-    evaluate_change.add_argument("--voxel-size", type=_positive_float, default=0.02)
-    evaluate_change.add_argument(
-        "--distance-thresholds", type=_positive_float, nargs="+", default=[0.02, 0.05, 0.10]
-    )
-    evaluate_change.add_argument("--primary-threshold", type=_positive_float, default=0.05)
-    evaluate_change.add_argument("--min-cluster-voxels", type=_positive_integer, default=20)
-
-    review_change = subparsers.add_parser(
-        "review-eth-change",
-        help="create a cached VLM pseudo-reference for ETH Office change candidates",
-    )
-    review_change.add_argument("--baseline", type=Path, required=True)
-    review_change.add_argument("--audit", type=Path, required=True)
-    review_change.add_argument("--output", type=Path, required=True)
-    review_change.add_argument("--cache-dir", type=Path, default=Path("outputs/phase6a/vlm-cache"))
-    review_change.add_argument("--model", default="gpt-5.6-terra")
 
     localize_objects = subparsers.add_parser(
         "localize-eth-objects",
@@ -225,9 +192,6 @@ def build_parser() -> argparse.ArgumentParser:
     serve.add_argument("--web-dist", type=Path, default=Path("web/dist"))
     serve.add_argument("--analysis-cache", type=Path, default=Path("outputs/phase4/vlm-cache"))
     serve.add_argument("--analysis-model", default="gpt-5.6-terra")
-    serve.add_argument("--change-audit", type=Path, default=Path("outputs/phase6a/office-audit"))
-    serve.add_argument("--change-baseline", type=Path, default=Path("outputs/phase6a/change-baseline"))
-    serve.add_argument("--change-review", type=Path, default=Path("outputs/phase6a/vlm-review"))
     serve.add_argument(
         "--object-localization",
         type=Path,
@@ -341,23 +305,7 @@ def _print_query(payload: dict[str, object]) -> None:
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
-    if args.command == "generate":
-        try:
-            summary = generate_trajectories(
-                GenerationConfig(
-                    output=args.output,
-                    episodes=args.episodes,
-                    base_seed=args.seed,
-                    max_steps=args.max_steps,
-                )
-            )
-        except (FileExistsError, ValueError) as error:
-            parser.error(str(error))
-        print(
-            f"Generated {summary.observation_count} observations across "
-            f"{summary.episode_count} episodes in {summary.output}"
-        )
-    elif args.command == "index":
+    if args.command == "index":
         try:
             resolved_output = args.output.resolve()
             if resolved_output.exists() and (
@@ -453,9 +401,6 @@ def main(argv: Sequence[str] | None = None) -> int:
                 verify_source=args.verify_source,
                 analysis_model=args.analysis_model,
                 analysis_cache=args.analysis_cache,
-                change_audit=args.change_audit,
-                change_baseline=args.change_baseline,
-                change_review=args.change_review,
                 object_localization=args.object_localization,
                 object_audit=args.object_audit,
                 rgbd_evidence=args.rgbd_evidence,
@@ -497,41 +442,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(
             f"Prepared {len(manifest['observations'])} ETH Office observations with "
             f"{manifest['rgb_samples_per_observation']} RGB samples each in {args.output.resolve()}"
-        )
-    elif args.command == "evaluate-eth-change":
-        from visual_memory_lab.change_detection import evaluate_eth_change
-
-        try:
-            run = evaluate_eth_change(
-                manifest_path=args.manifest,
-                output=args.output,
-                voxel_size=args.voxel_size,
-                distance_thresholds=tuple(args.distance_thresholds),
-                primary_threshold=args.primary_threshold,
-                min_cluster_voxels=args.min_cluster_voxels,
-            )
-        except (FileExistsError, OSError, ValueError) as error:
-            parser.error(str(error))
-        print(
-            f"Compared {run['pair_count']} ETH Office pairs and wrote "
-            f"{run['candidate_count']} geometric candidates to {args.output.resolve()}"
-        )
-    elif args.command == "review-eth-change":
-        from visual_memory_lab.change_review import review_eth_changes
-
-        try:
-            summary = review_eth_changes(
-                baseline=args.baseline,
-                audit=args.audit,
-                output=args.output,
-                cache_dir=args.cache_dir,
-                model=args.model,
-            )
-        except (FileExistsError, OSError, RuntimeError, ValueError) as error:
-            parser.error(str(error))
-        print(
-            f"Reviewed {summary['reviewed_candidate_count']} geometric candidates and accepted "
-            f"{summary['accepted_pseudo_reference_count']} into the VLM pseudo-reference"
         )
     elif args.command == "localize-eth-objects":
         from visual_memory_lab.object_localization import localize_eth_objects

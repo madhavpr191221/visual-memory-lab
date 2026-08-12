@@ -18,7 +18,6 @@ from PIL import Image, UnidentifiedImageError
 from pydantic import ValidationError
 
 from visual_memory_lab import __version__
-from visual_memory_lab.change_showcase import ChangeShowcase
 from visual_memory_lab.object_showcase import ObjectShowcase
 from visual_memory_lab.association_showcase import AssociationShowcase
 from visual_memory_lab.rgbd_showcase import RgbdShowcase
@@ -53,9 +52,6 @@ class AppConfig:
     verify_source: bool = False
     analysis_model: str = "gpt-5.6-terra"
     analysis_cache: Path = Path("outputs/phase4/vlm-cache")
-    change_audit: Path = Path("outputs/phase6a/office-audit")
-    change_baseline: Path = Path("outputs/phase6a/change-baseline")
-    change_review: Path = Path("outputs/phase6a/vlm-review")
     object_localization: Path = Path("outputs/phase6b1/object-localization")
     object_audit: Path = Path("outputs/phase6b1/vlm-audit")
     rgbd_evidence: Path = Path("outputs/phase612/rgbd-evidence")
@@ -69,7 +65,6 @@ class AppResources:
     memory: MemoryStore
     queries: MemoryStore
     analysis: object | None = None
-    changes: ChangeShowcase | None = None
     objects: ObjectShowcase | None = None
     rgbd: RgbdShowcase | None = None
     associations: AssociationShowcase | None = None
@@ -96,15 +91,6 @@ def load_resources(config: AppConfig) -> AppResources:
             model=config.analysis_model,
             cache_dir=config.analysis_cache,
         )
-    changes = None
-    try:
-        changes = ChangeShowcase.load(
-            audit=config.change_audit,
-            baseline=config.change_baseline,
-            review=config.change_review,
-        )
-    except FileNotFoundError:
-        pass
     associations = None
     try:
         associations = AssociationShowcase.load(
@@ -135,7 +121,6 @@ def load_resources(config: AppConfig) -> AppResources:
         memory=memory,
         queries=queries,
         analysis=analysis,
-        changes=changes,
         objects=objects,
         rgbd=rgbd,
         associations=associations,
@@ -308,24 +293,6 @@ def create_app(
     @app.get("/api/evaluation")
     def evaluation() -> dict[str, object]:
         return current().service.evaluation.metrics
-
-    @app.get("/api/phase6a")
-    def phase6a() -> dict[str, object]:
-        changes = current().changes
-        if changes is None:
-            raise HTTPException(status_code=404, detail="Phase 6A artifacts are unavailable")
-        return changes.payload
-
-    @app.get("/api/phase6a/images/{image_id}")
-    def phase6a_image(image_id: str) -> FileResponse:
-        changes = current().changes
-        if changes is None:
-            raise HTTPException(status_code=404, detail="Phase 6A artifacts are unavailable")
-        try:
-            path = changes.image_path(image_id)
-        except KeyError as error:
-            raise HTTPException(status_code=404, detail=str(error)) from error
-        return FileResponse(path, content_disposition_type="inline")
 
     @app.get("/api/phase6b1")
     def phase6b1() -> dict[str, object]:
