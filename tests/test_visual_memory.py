@@ -7,10 +7,10 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from PIL import Image
 
 from visual_memory_lab.cli import main
 from visual_memory_lab.memory import MemoryIndex, build_index
-from visual_memory_lab.trajectory import GenerationConfig, generate_trajectories
 
 
 class FakeEncoder:
@@ -48,14 +48,7 @@ class FakeEncoder:
 def _build_test_index(tmp_path: Path, *, episodes: int = 1) -> tuple[Path, Path]:
     source = tmp_path / "run"
     output = tmp_path / "index"
-    generate_trajectories(
-        GenerationConfig(
-            output=source,
-            episodes=episodes,
-            base_seed=42,
-            max_steps=100,
-        )
-    )
+    _write_source(source, episodes=episodes)
     build_index(
         source=source,
         output=output,
@@ -63,6 +56,46 @@ def _build_test_index(tmp_path: Path, *, episodes: int = 1) -> tuple[Path, Path]
         batch_size=7,
     )
     return source, output
+
+
+def _write_source(source: Path, *, episodes: int) -> None:
+    image_root = source / "images"
+    image_root.mkdir(parents=True)
+    records: list[dict[str, object]] = []
+    for episode in range(episodes):
+        episode_id = f"episode-{episode:03d}"
+        for step in range(38):
+            image_name = f"{episode_id}-{step:04d}.png"
+            Image.new("RGB", (56, 56), (episode * 20, step % 255, 100)).save(
+                image_root / image_name
+            )
+            records.append(
+                {
+                    "observation_id": f"{episode_id}:{step:04d}",
+                    "episode_id": episode_id,
+                    "step": step,
+                    "action": None if step == 0 else "forward",
+                    "image_path": image_name,
+                    "nearby_actions": [
+                        {"step": nearby, "action": "forward"}
+                        for nearby in range(max(0, step - 1), min(38, step + 2))
+                    ],
+                }
+            )
+    (source / "run.json").write_text(
+        json.dumps(
+            {
+                "observation_count": len(records),
+                "image_root": "images",
+                "image": {"width": 56, "height": 56, "mode": "RGB"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    (source / "observations.jsonl").write_text(
+        "".join(json.dumps(record) + "\n" for record in records),
+        encoding="utf-8",
+    )
 
 
 def test_index_artifact_preserves_embedding_record_alignment(tmp_path: Path) -> None:
@@ -91,7 +124,7 @@ def test_index_artifact_preserves_embedding_record_alignment(tmp_path: Path) -> 
 
 def test_index_load_rejects_changed_source_frame(tmp_path: Path) -> None:
     source, output = _build_test_index(tmp_path)
-    frame = source / "episodes" / "episode-000" / "frames" / "0000.png"
+    frame = source / "images" / "episode-000-0000.png"
     frame.write_bytes(frame.read_bytes() + b"changed")
 
     with pytest.raises(ValueError, match="changed since the index was built"):
@@ -100,8 +133,8 @@ def test_index_load_rejects_changed_source_frame(tmp_path: Path) -> None:
 
 def test_index_build_rejects_invalid_frame(tmp_path: Path) -> None:
     source = tmp_path / "run"
-    generate_trajectories(GenerationConfig(output=source, episodes=1))
-    frame = source / "episodes" / "episode-000" / "frames" / "0000.png"
+    _write_source(source, episodes=1)
+    frame = source / "images" / "episode-000-0000.png"
     frame.write_text("not an image", encoding="utf-8")
 
     with pytest.raises(ValueError, match="could not read trajectory frame"):
@@ -115,7 +148,7 @@ def test_index_build_rejects_invalid_frame(tmp_path: Path) -> None:
 def test_index_build_refuses_occupied_output(tmp_path: Path) -> None:
     source = tmp_path / "run"
     output = tmp_path / "index"
-    generate_trajectories(GenerationConfig(output=source, episodes=1))
+    _write_source(source, episodes=1)
     output.mkdir()
     (output / "keep.txt").write_text("keep", encoding="utf-8")
 

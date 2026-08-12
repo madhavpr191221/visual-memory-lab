@@ -6,9 +6,7 @@ readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "fastapi>=0.141.1",
-    "gymnasium>=1.2.3,<2",
     "matplotlib>=3.11.1",
-    "minigrid>=3.1.0,<4",
     "numpy>=2.5.2",
     "openai>=2,<3",
     "pillow>=12.3.0,<13",
