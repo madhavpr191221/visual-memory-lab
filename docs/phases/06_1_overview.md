@@ -182,7 +182,7 @@ uncertain without stronger evidence.
 
 ### Status
 
-Planned.
+Implemented. See [Phase 6.1.3: Cross-Visit Object Association](06_1_3_cross_visit_object_association.md).
 
 ### Results to record
 

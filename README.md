@@ -132,6 +132,8 @@ The current object-localization baseline is documented in
 [Phase 6.1.1: Automatic Object Localization](docs/phases/06_1_object_localization.md).
 The RGB-D evidence and visit-comparison step is documented in
 [Phase 6.1.2: RGB-D Object Evidence](docs/phases/06_1_2_rgbd_object_evidence.md).
+The candidate identity-association step is documented in
+[Phase 6.1.3: Cross-Visit Object Association](docs/phases/06_1_3_cross_visit_object_association.md).
 The broader object-aware memory design is documented in
 [Phase 6.1: Object-Aware Change Memory](docs/phases/06_1_object_aware_change_memory.md).
 The high-level roadmap is in
@@ -161,6 +163,8 @@ object identity across visits. Cross-visit identity is intentionally not claimed
 
 Open `http://127.0.0.1:8000/lab/object-evidence` to compare visible RGB-D
 evidence for an object class across two logical visits.
+Open `http://127.0.0.1:8000/lab/object-association` to inspect ranked candidate
+matches across visits.
 
 Generate the Phase 6.1.1 artifact on an NVIDIA GPU with:
 

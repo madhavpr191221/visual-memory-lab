@@ -233,6 +233,8 @@
 .extentSketch line { stroke: var(--muted); stroke-width: 1; }
 .extentSketch rect { fill: rgba(53, 101, 135, .18); stroke: var(--blue); stroke-width: 2; }
 .extentSketch circle { fill: var(--blue); }
+.associationScores { display: grid; gap: 8px; margin-top: 18px; padding: 16px; background: var(--surface-2); }
+.associationBox { position: absolute; border: 3px solid #ef8b2c; pointer-events: none; }
 @media (max-width: 980px) {
   .objectControls, .objectDetail { grid-template-columns: 1fr 1fr; }
   .objectDetail .objectImageStage { grid-column: 1 / -1; }

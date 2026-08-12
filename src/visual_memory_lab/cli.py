@@ -185,6 +185,27 @@ def build_parser() -> argparse.ArgumentParser:
     rgbd.add_argument("--localization", type=Path, required=True)
     rgbd.add_argument("--output", type=Path, required=True)
 
+    associate = subparsers.add_parser(
+        "associate-eth-objects",
+        help="rank cautious same-object candidates across ETH Office visits",
+    )
+    associate.add_argument("--localization", type=Path, required=True)
+    associate.add_argument("--rgbd-evidence", type=Path, required=True)
+    associate.add_argument("--output", type=Path, required=True)
+    associate.add_argument("--device", default="auto")
+    associate.add_argument("--top-per-group", type=_positive_integer, default=200)
+
+    audit_associate = subparsers.add_parser(
+        "audit-eth-object-associations",
+        help="VLM pseudo-audit the highest-ranked cross-visit candidates",
+    )
+    audit_associate.add_argument("--associations", type=Path, required=True)
+    audit_associate.add_argument("--localization", type=Path, required=True)
+    audit_associate.add_argument("--output", type=Path, required=True)
+    audit_associate.add_argument("--cache-dir", type=Path, default=Path("outputs/phase613/vlm-cache"))
+    audit_associate.add_argument("--model", default="gpt-5.6-terra")
+    audit_associate.add_argument("--limit", type=_positive_integer, default=200)
+
     serve = subparsers.add_parser(
         "serve-ui",
         help="serve the local React office-memory explorer",
@@ -217,6 +238,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     serve.add_argument(
         "--rgbd-evidence", type=Path, default=Path("outputs/phase612/rgbd-evidence")
+    )
+    serve.add_argument(
+        "--associations", type=Path, default=Path("outputs/phase613/associations")
+    )
+    serve.add_argument(
+        "--association-audit", type=Path, default=Path("outputs/phase613/vlm-audit")
     )
     serve.add_argument("--device", default="auto")
     serve.add_argument("--host", default="127.0.0.1")
@@ -432,6 +459,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 object_localization=args.object_localization,
                 object_audit=args.object_audit,
                 rgbd_evidence=args.rgbd_evidence,
+                associations=args.associations,
+                association_audit=args.association_audit,
             )
         )
         uvicorn.run(app, host=args.host, port=args.port)
@@ -559,4 +588,36 @@ def main(argv: Sequence[str] | None = None) -> int:
             f"{summary['nonempty_evidence_count']} contain point-cloud evidence "
             f"in {args.output.resolve()}"
         )
+    elif args.command == "associate-eth-objects":
+        from visual_memory_lab.object_association import associate_eth_objects
+
+        try:
+            summary = associate_eth_objects(
+                localization=args.localization,
+                rgbd_evidence=args.rgbd_evidence,
+                output=args.output,
+                device=args.device,
+                top_per_group=args.top_per_group,
+            )
+        except (FileExistsError, OSError, RuntimeError, ValueError) as error:
+            parser.error(str(error))
+        print(
+            f"Ranked {summary['pair_count']} cross-visit candidates from "
+            f"{summary['detection_count']} detections on {summary['device']}"
+        )
+    elif args.command == "audit-eth-object-associations":
+        from visual_memory_lab.association_audit import audit_associations
+
+        try:
+            summary = audit_associations(
+                associations=args.associations,
+                localization=args.localization,
+                output=args.output,
+                cache_dir=args.cache_dir,
+                model=args.model,
+                limit=args.limit,
+            )
+        except (FileExistsError, OSError, RuntimeError, ValueError) as error:
+            parser.error(str(error))
+        print(f"Pseudo-audited {summary['reviewed_count']} association candidates")
     return 0

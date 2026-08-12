@@ -147,6 +147,7 @@ export interface Phase6aShowcase {
   dataset: string;
   logical_order_note: string;
   claim_boundary: string;
+  vlm_audit?: { verdict: "same" | "different" | "uncertain"; explanation: string };
   metrics: {
     observation_count: number;
     rgb_sample_count: number;
@@ -286,4 +287,40 @@ export interface Phase612Showcase {
   metrics: { frame_count: number; detection_count: number; evidence_count: number; nonempty_evidence_count: number };
   classes: ObjectClass[];
   comparisons: RgbdComparison[];
+}
+
+export interface AssociationSide extends ObjectDetection {
+  observation: number;
+  message_index: number;
+  image_url: string;
+  mask_url: string;
+}
+
+export interface AssociationPair {
+  pair_id: string;
+  earlier_observation: number;
+  later_observation: number;
+  object_class: ObjectClass;
+  earlier_detection_id: string;
+  later_detection_id: string;
+  appearance_similarity: number;
+  shape_score: number;
+  evidence_score: number;
+  position_score: number;
+  association_score: number;
+  centroid_distance_m: number | null;
+  association_status: "likely_same" | "possible_match" | "uncertain";
+  movement_status: "possible_movement" | "not_established";
+  claim_boundary: string;
+  vlm_audit?: { verdict: "same" | "different" | "uncertain"; explanation: string };
+  earlier: AssociationSide;
+  later: AssociationSide;
+}
+
+export interface Phase613Showcase {
+  phase: string;
+  claim_boundary: string;
+  metrics: { pair_count: number; detection_count: number; classes: ObjectClass[] };
+  classes: ObjectClass[];
+  pairs: AssociationPair[];
 }

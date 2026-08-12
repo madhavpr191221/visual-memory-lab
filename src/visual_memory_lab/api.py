@@ -20,6 +20,7 @@ from pydantic import ValidationError
 from visual_memory_lab import __version__
 from visual_memory_lab.change_showcase import ChangeShowcase
 from visual_memory_lab.object_showcase import ObjectShowcase
+from visual_memory_lab.association_showcase import AssociationShowcase
 from visual_memory_lab.rgbd_showcase import RgbdShowcase
 from visual_memory_lab.api_models import (
     AnalysisRequest,
@@ -58,6 +59,8 @@ class AppConfig:
     object_localization: Path = Path("outputs/phase6b1/object-localization")
     object_audit: Path = Path("outputs/phase6b1/vlm-audit")
     rgbd_evidence: Path = Path("outputs/phase612/rgbd-evidence")
+    associations: Path = Path("outputs/phase613/associations")
+    association_audit: Path = Path("outputs/phase613/vlm-audit")
 
 
 @dataclass
@@ -69,6 +72,7 @@ class AppResources:
     changes: ChangeShowcase | None = None
     objects: ObjectShowcase | None = None
     rgbd: RgbdShowcase | None = None
+    associations: AssociationShowcase | None = None
 
 
 def load_resources(config: AppConfig) -> AppResources:
@@ -101,6 +105,15 @@ def load_resources(config: AppConfig) -> AppResources:
         )
     except FileNotFoundError:
         pass
+    associations = None
+    try:
+        associations = AssociationShowcase.load(
+            associations=config.associations,
+            localization=config.object_localization,
+            audit=config.association_audit,
+        )
+    except FileNotFoundError:
+        pass
     objects = None
     try:
         objects = ObjectShowcase.load(
@@ -125,6 +138,7 @@ def load_resources(config: AppConfig) -> AppResources:
         changes=changes,
         objects=objects,
         rgbd=rgbd,
+        associations=associations,
     )
 
 
@@ -342,6 +356,13 @@ def create_app(
         if evidence is None:
             raise HTTPException(status_code=404, detail="Phase 6.1.2 RGB-D evidence is unavailable")
         return evidence.payload
+
+    @app.get("/api/phase613")
+    def phase613() -> dict[str, object]:
+        associations = current().associations
+        if associations is None:
+            raise HTTPException(status_code=404, detail="Phase 6.1.3 associations are unavailable")
+        return associations.payload
 
     @app.get("/api/queries")
     def queries(
