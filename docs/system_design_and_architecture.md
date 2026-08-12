@@ -23,7 +23,7 @@ the evidence.
 
 ```mermaid
 flowchart LR
-    D[Public datasets\nMiniGrid · 7-Scenes · ETH Office]
+    D[Public datasets\n7-Scenes Office · ETH Office]
     P[Offline pipelines\nmanifest · embeddings · detection · masks · RGB-D · association]
     A[Versioned artifacts\nJSONL · images · masks · embeddings · summaries]
     F[FastAPI resource loader]
@@ -47,7 +47,6 @@ that has already been produced, checked, and given a claim boundary.
 
 The project uses three kinds of data:
 
-- MiniGrid trajectories with exact simulator state and object identity;
 - 7-Scenes Office RGB frames and camera poses for place memory;
 - ETH ASL Change Detection Office recordings with RGB images, coloured point
   clouds, and recorded transforms.
@@ -251,11 +250,11 @@ Representative API families are:
 | --- | --- | --- |
 | `/api/search/text` | memory index | text-to-image retrieval |
 | `/api/search/image` | memory index | image-to-image retrieval |
-| `/api/phase6b1` | localization artifact | object predictions |
-| `/api/phase612` | RGB-D artifact | visible 3D evidence |
-| `/api/phase613` | association artifact | candidate pairs and scores |
+| `/api/objects` | localization artifact | object predictions |
+| `/api/evidence` | RGB-D artifact | visible 3D evidence |
+| `/api/associations` | association artifact | candidate pairs and scores |
 | `/api/zones` | zone artifact | semantic place vocabulary |
-| `/api/evaluation` | evaluation artifact | retrieval metrics |
+| `/api/memory/evaluation` | evaluation artifact | retrieval metrics |
 
 The response contract is evidence-first. A route can say that a model produced
 a box or that two detections are a candidate pair. It must not silently turn
