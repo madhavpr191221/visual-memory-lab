@@ -47,6 +47,8 @@ def test_health_capabilities_and_text_search(tmp_path: Path) -> None:
         assert response.status_code == 200
         assert response.json()["likely_area"]["strength"] == "strong"
         assert "C:\\" not in response.text
+        assert client.get("/api/evaluation").status_code == 404
+        assert client.get("/api/phase6a").status_code == 404
 
 
 def test_image_search_validation_and_allowlisted_serving(tmp_path: Path) -> None:
@@ -79,7 +81,7 @@ def test_image_search_validation_and_allowlisted_serving(tmp_path: Path) -> None
 
 def test_evaluation_zone_and_failure_endpoints(tmp_path: Path) -> None:
     with _client(tmp_path) as client:
-        assert client.get("/api/evaluation").json()["pose"]["query_count"] == 1
+        assert client.get("/api/memory/evaluation").json()["pose"]["query_count"] == 1
         assert len(client.get("/api/zones").json()) == 2
         assert client.get("/api/zones/zone-a").json()["name"] == "Window desk"
         assert client.get("/api/zones/missing").status_code == 404
@@ -91,7 +93,7 @@ def test_evaluation_zone_and_failure_endpoints(tmp_path: Path) -> None:
         assert client.get("/api/queries/missing").status_code == 404
 
 
-def test_phase6b1_showcase_and_allowlisted_image(tmp_path: Path) -> None:
+def test_object_showcase_and_allowlisted_image(tmp_path: Path) -> None:
     service = make_service(tmp_path)
     resources = AppResources(
         service=service,
@@ -100,13 +102,13 @@ def test_phase6b1_showcase_and_allowlisted_image(tmp_path: Path) -> None:
         objects=make_object_showcase(tmp_path / "objects"),
     )
     with TestClient(create_app(AppConfig(web_dist=tmp_path / "missing"), resources=resources)) as client:
-        response = client.get("/api/phase6b1")
+        response = client.get("/api/objects")
         assert response.status_code == 200
         assert response.json()["metrics"]["detection_count"] == 1
-        image = client.get("/api/phase6b1/images/eth-office-0-000001-raw")
+        image = client.get("/api/objects/images/eth-office-0-000001-raw")
         assert image.status_code == 200
         assert image.headers["content-type"] == "image/jpeg"
-        assert client.get("/api/phase6b1/images/unknown").status_code == 404
+        assert client.get("/api/objects/images/unknown").status_code == 404
 
 
 class FakeAnalyzer:

@@ -11,7 +11,7 @@ export function AssociationPage() {
   const [objectClass, setObjectClass] = useState<ObjectClass | "all">("all");
   const [pairId, setPairId] = useState("");
   const [error, setError] = useState("");
-  useEffect(() => { let ignore = false; api.phase613().then((value) => { if (!ignore) { setData(value); setPairId(value.pairs[0]?.pair_id ?? ""); } }).catch((reason: Error) => { if (!ignore) setError(reason.message); }); return () => { ignore = true; }; }, []);
+  useEffect(() => { let ignore = false; api.associations().then((value) => { if (!ignore) { setData(value); setPairId(value.pairs[0]?.pair_id ?? ""); } }).catch((reason: Error) => { if (!ignore) setError(reason.message); }); return () => { ignore = true; }; }, []);
   const pairs = useMemo(() => data?.pairs.filter((item) => objectClass === "all" || item.object_class === objectClass) ?? [], [data, objectClass]);
   const selected = pairs.find((item) => item.pair_id === pairId) ?? pairs[0] ?? null;
   if (error) return <p className="error">{error}</p>;

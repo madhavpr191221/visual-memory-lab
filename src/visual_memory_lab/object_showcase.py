@@ -57,7 +57,7 @@ class ObjectShowcase:
                 payload_detections.append(
                     {
                         **detection,
-                        "mask_url": f"/api/phase6b1/images/{mask_id}",
+                        "mask_url": f"/api/objects/images/{mask_id}",
                         "audit": detection_audits.get(detection_id),
                         "audit_status": (
                             str(detection_audits[detection_id]["verdict"])
@@ -70,8 +70,8 @@ class ObjectShowcase:
             payload_frames.append(
                 {
                     **frame,
-                    "image_url": f"/api/phase6b1/images/{raw_id}",
-                    "overlay_url": f"/api/phase6b1/images/{overlay_id}",
+                    "image_url": f"/api/objects/images/{raw_id}",
+                    "overlay_url": f"/api/objects/images/{overlay_id}",
                     "detections": payload_detections,
                     "audit_status": "reviewed" if frame_audit is not None else "unreviewed",
                     "missed_visible_classes": (

@@ -290,45 +290,45 @@ def create_app(
         except KeyError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
 
-    @app.get("/api/evaluation")
+    @app.get("/api/memory/evaluation")
     def evaluation() -> dict[str, object]:
         return current().service.evaluation.metrics
 
-    @app.get("/api/phase6b1")
-    def phase6b1() -> dict[str, object]:
+    @app.get("/api/objects")
+    def objects() -> dict[str, object]:
         objects = current().objects
         if objects is None:
             raise HTTPException(
                 status_code=404,
                 detail=(
-                    "Phase 6B1 artifacts are unavailable; run localize-eth-objects first"
+                    "Object artifacts are unavailable; run localize-eth-objects first"
                 ),
             )
         return objects.payload
 
-    @app.get("/api/phase6b1/images/{image_id}")
-    def phase6b1_image(image_id: str) -> FileResponse:
+    @app.get("/api/objects/images/{image_id}")
+    def object_image(image_id: str) -> FileResponse:
         objects = current().objects
         if objects is None:
-            raise HTTPException(status_code=404, detail="Phase 6B1 artifacts are unavailable")
+            raise HTTPException(status_code=404, detail="Object artifacts are unavailable")
         try:
             path = objects.image_path(image_id)
         except KeyError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
         return FileResponse(path, content_disposition_type="inline")
 
-    @app.get("/api/phase612")
-    def phase612() -> dict[str, object]:
+    @app.get("/api/evidence")
+    def evidence() -> dict[str, object]:
         evidence = current().rgbd
         if evidence is None:
-            raise HTTPException(status_code=404, detail="Phase 6.1.2 RGB-D evidence is unavailable")
+            raise HTTPException(status_code=404, detail="RGB-D evidence is unavailable")
         return evidence.payload
 
-    @app.get("/api/phase613")
-    def phase613() -> dict[str, object]:
+    @app.get("/api/associations")
+    def associations() -> dict[str, object]:
         associations = current().associations
         if associations is None:
-            raise HTTPException(status_code=404, detail="Phase 6.1.3 associations are unavailable")
+            raise HTTPException(status_code=404, detail="Association artifacts are unavailable")
         return associations.payload
 
     @app.get("/api/queries")
