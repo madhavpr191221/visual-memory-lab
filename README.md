@@ -86,6 +86,7 @@ Used for object-aware evidence. The recordings contain RGB images, coloured poin
 4. **Object localization:** produce inspectable boxes and masks for chairs, bins, and boxes.
 5. **RGB-D object evidence:** summarize visible object geometry in the recorded room frame.
 6. **Cross-visit association:** rank cautious candidate matches across visits.
+7. **Technician task benchmark:** evaluate manually authored office questions with evidence and safe-abstention labels.
 
 The detailed phase documents are listed in the [docs/phases](docs/phases) directory.
 
@@ -133,6 +134,7 @@ Useful pages:
 /app/objects      Find candidate objects
 /app/compare      Compare two visits
 /app/evidence     Open supporting evidence
+/app/tasks        Technician-style task benchmark
 /research         Research overview
 /research/evaluation       Retrieval evaluation
 /research/failures         Failure browser

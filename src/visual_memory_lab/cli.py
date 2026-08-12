@@ -100,6 +100,28 @@ def build_parser() -> argparse.ArgumentParser:
     traversal.add_argument("--output", type=Path, required=True)
     traversal.add_argument("--seed", type=_non_negative_integer, default=42)
 
+    benchmark = subparsers.add_parser(
+        "evaluate-technician-benchmark",
+        help="evaluate the authored office technician-style question set",
+    )
+    benchmark.add_argument(
+        "--questions", type=Path, default=Path("data/phase7/technician_questions.jsonl")
+    )
+    benchmark.add_argument(
+        "--memory-index", type=Path, default=Path("outputs/phase3/train-index")
+    )
+    benchmark.add_argument("--output", type=Path, required=True)
+    benchmark.add_argument("--device", default="auto")
+    benchmark.add_argument(
+        "--eth-localization", type=Path, default=Path("outputs/phase6b1/object-localization")
+    )
+    benchmark.add_argument(
+        "--eth-rgbd", type=Path, default=Path("outputs/phase612/rgbd-evidence")
+    )
+    benchmark.add_argument(
+        "--eth-associations", type=Path, default=Path("outputs/phase613/associations")
+    )
+
     prepare_eth = subparsers.add_parser(
         "prepare-eth-office",
         help="audit ETH Office bags and meshes and create a browsable RGB gallery",
@@ -208,6 +230,16 @@ def build_parser() -> argparse.ArgumentParser:
     )
     serve.add_argument(
         "--association-audit", type=Path, default=Path("outputs/phase613/vlm-audit")
+    )
+    serve.add_argument(
+        "--technician-questions",
+        type=Path,
+        default=Path("data/phase7/technician_questions.jsonl"),
+    )
+    serve.add_argument(
+        "--technician-output",
+        type=Path,
+        default=Path("outputs/phase7/technician-benchmark"),
     )
     serve.add_argument("--device", default="auto")
     serve.add_argument("--host", default="127.0.0.1")
@@ -406,6 +438,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 rgbd_evidence=args.rgbd_evidence,
                 associations=args.associations,
                 association_audit=args.association_audit,
+                technician_questions=args.technician_questions,
+                technician_output=args.technician_output,
             )
         )
         uvicorn.run(app, host=args.host, port=args.port)
@@ -426,6 +460,83 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(
             f"Evaluated {metrics['query_target_count']} query-target combinations "
             f"across {metrics['pair_count']} traversal pairs in {args.output.resolve()}"
+        )
+    elif args.command == "evaluate-technician-benchmark":
+        from visual_memory_lab.technician_benchmark import write_benchmark
+        from visual_memory_lab.encoder import ClipEncoder
+
+        try:
+            memory = MemoryIndex.load(args.memory_index)
+            encoder = ClipEncoder(device=args.device)
+            ensure_matching_encoder(memory, encoder)
+            zone_payload = json.loads(Path("artifacts/phase3/office-zones.json").read_text(encoding="utf-8"))
+            assignments = zone_payload.get("assignments", {})
+
+            def search(source_observation_id: str) -> list[dict[str, object]]:
+                vector = memory.observation_embedding(source_observation_id)
+                payloads = []
+                for result in memory.search(vector, top_k=10, exclude_observation_id=source_observation_id):
+                    observation = result.observation
+                    observation_id = str(observation["observation_id"])
+                    payloads.append({
+                        "rank": result.rank,
+                        "observation_id": observation_id,
+                        "zone_slug": assignments.get(observation_id),
+                        "visit_id": observation.get("sequence_id", observation.get("episode_id")),
+                    })
+                return payloads
+
+            artifacts = {
+                label
+                for label, path in {
+                    "localization": args.eth_localization / "detections.jsonl",
+                    "rgbd": args.eth_rgbd / "evidence.jsonl",
+                    "association": args.eth_associations / "associations.jsonl",
+                }.items()
+                if path.is_file()
+            }
+            artifact_records: dict[str, list[dict[str, object]]] = {}
+            localization_path = args.eth_localization / "detections.jsonl"
+            if localization_path.is_file():
+                artifact_records["localization"] = [
+                    {**json.loads(line), "artifact_id": json.loads(line).get("detection_id")}
+                    for line in localization_path.read_text(encoding="utf-8").splitlines()
+                    if line.strip()
+                ]
+            rgbd_path = args.eth_rgbd / "evidence.jsonl"
+            if rgbd_path.is_file():
+                artifact_records["rgbd"] = [
+                    {**json.loads(line), "artifact_id": json.loads(line).get("detection_id")}
+                    for line in rgbd_path.read_text(encoding="utf-8").splitlines()
+                    if line.strip()
+                ]
+            association_path = args.eth_associations / "associations.jsonl"
+            if association_path.is_file():
+                association_records = []
+                for line in association_path.read_text(encoding="utf-8").splitlines():
+                    if not line.strip():
+                        continue
+                    record = json.loads(line)
+                    for key in ("earlier_detection_id", "later_detection_id"):
+                        detection_id = str(record.get(key, ""))
+                        if detection_id:
+                            record_copy = dict(record)
+                            record_copy["frame_id"] = ":".join(detection_id.split(":")[:-1])
+                            record_copy["object_class"] = record.get("object_class")
+                            association_records.append(record_copy)
+                artifact_records["association"] = association_records
+            payload = write_benchmark(
+                questions_path=args.questions,
+                output=args.output,
+                search=search,
+                available_artifacts=artifacts,
+                artifact_records=artifact_records,
+            )
+        except (FileExistsError, OSError, RuntimeError, ValueError) as error:
+            parser.error(str(error))
+        print(
+            f"Evaluated {payload['question_count']} technician questions; "
+            f"evidence recall={payload['evidence_recall']} in {args.output.resolve()}"
         )
     elif args.command == "prepare-eth-office":
         from visual_memory_lab.eth_office import prepare_eth_office

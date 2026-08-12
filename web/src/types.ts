@@ -81,6 +81,26 @@ export interface QueryPage {
   items: QueryListItem[];
 }
 
+export interface TechnicianQuestion {
+  question_id: string;
+  question: string;
+  category: string;
+  dataset: string;
+  answerability: "supported" | "supported_with_limits" | "requires_manual_review" | "unsupported";
+  rationale: string;
+  source_observation_id?: string;
+  expected_zone?: string | null;
+  expected_visit?: string | null;
+  expected_object_class?: string | null;
+  expected_artifact?: string | null;
+}
+
+export interface TechnicianBenchmark {
+  question_count: number;
+  questions: TechnicianQuestion[];
+  summary: Record<string, unknown> | null;
+}
+
 export interface ChangeCandidateReview {
   candidate_id: string;
   verdict: "supported" | "unsupported" | "uncertain";
