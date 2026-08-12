@@ -76,7 +76,7 @@ uv run visual-memory-lab build-eth-rgbd-evidence `
   --output outputs/phase612/rgbd-evidence
 ```
 
-Open `http://127.0.0.1:8000/lab/object-evidence` after starting the UI.
+Open `http://127.0.0.1:8000/research/evidence` after starting the UI.
 
 ## Results and limitations
 

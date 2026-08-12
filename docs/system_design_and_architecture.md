@@ -23,15 +23,35 @@ flowchart LR
     A[Versioned local artifacts]
     F[FastAPI resource loader]
     API[Domain API]
-    UI[React and TypeScript evidence explorer]
-    U[Technician or reviewer]
+    L[Landing page\n/]
+    APP[Use Visual Memory\n/app]
+    INS[System Insights\n/research]
+    T[Technician]
+    R[Engineer or reviewer]
     V[Optional VLM pseudo-audit]
 
-    D --> P --> A --> F --> API --> UI --> U
+    D --> P --> A --> F --> API
+    API --> L
+    L --> APP --> T
+    L --> INS --> R
     V -. selected evidence .-> A
 ```
 
 The browser does not run CLIP indexing, object detection, segmentation, RGB-D processing, or VLM analysis during ordinary page loads. Those jobs run offline and write inspectable artifacts.
+
+The landing page (`/`) is a choice page with two workspace entry points:
+
+- `/app` is the **Use Visual Memory** workspace for technicians and users. It
+  is organized around practical tasks such
+  as asking where something was seen, finding an object, comparing visits, and
+  opening evidence.
+- `/research` is the **System Insights** workspace for reviewers and engineers.
+  It is organized around questions
+  such as retrieval quality, detector coverage, zone assignments, geometry,
+  association candidates, and failure modes.
+
+This is one office evidence system with two presentations, not two separate
+pipelines or two copies of the data.
 
 ## 3. Data sources
 
@@ -127,7 +147,7 @@ The ETH data provides coloured point clouds and recorded transforms rather than 
 For visible points (P = \{p_i\}), the robust centroid is:
 
 ```math
-\bar p = \operatorname{median}_{p_i \in P}(p_i)
+\bar p = \mathrm{median}_{p_i \in P}(p_i)
 ```
 
 The output also records point count and a robust spatial extent. This is partial visible geometry, not a complete object reconstruction. Different viewpoints can expose different surfaces even when the physical object has not changed.
@@ -189,16 +209,26 @@ The API is read-only for ordinary browsing. Optional cloud analysis is a separat
 ## 12. UI structure
 
 ```text
-Ask memory
-├── Evidence
-├── Failures
-├── Zones
-├── Objects
-├── 3D evidence
-└── Compare visits
+Landing page (/) — choose a workspace
+├── Use Visual Memory workspace (/app)
+│   ├── Ask memory
+│   ├── Find objects
+│   ├── Compare visits
+│   └── Evidence
+└── System Insights workspace (/research)
+    ├── Overview and evaluation
+    ├── Failures
+    ├── Zones
+    ├── Objects
+    ├── 3D evidence
+    └── Associations
 ```
 
-Each page shows evidence beside the interpretation:
+The technician pages keep the question and evidence together. The research
+pages expose measurements and intermediate artifacts without making the
+technician navigate through them.
+
+Each evidence-bearing page shows:
 
 - source frame and visit;
 - image, crop, box, or mask;

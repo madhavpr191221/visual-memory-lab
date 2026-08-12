@@ -336,9 +336,9 @@ separately:
 2. retrieve the correct previous visit;
 3. compare the two aligned memories and report the actual change.
 
-7-Scenes remains useful for the first alignment problem. A controlled repeated-visit protocol,
-game environment, or deliberately captured public-safe scene is required for
-the final state-change benchmark.
+7-Scenes remains useful for the first alignment problem. A controlled repeated-visit
+protocol or deliberately captured public-safe office scene is required for the
+final state-change benchmark.
 
 ## References
 

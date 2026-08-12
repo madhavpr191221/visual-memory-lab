@@ -87,7 +87,7 @@ uv run visual-memory-lab audit-eth-object-associations `
 Open the UI at:
 
 ```text
-http://127.0.0.1:8000/lab/object-association
+http://127.0.0.1:8000/research/associations
 ```
 
 The acceptance run ranked 3,600 candidates from 1,417 detections. The local

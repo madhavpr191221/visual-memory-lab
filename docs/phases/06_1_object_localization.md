@@ -253,7 +253,7 @@ ground-truth set. Its purpose is rapid failure discovery and sample curation.
 
 ## Objects UI
 
-The active `/lab/objects` page replaces the earlier hand-curated Changes
+The active `/research/objects` page replaces the earlier hand-curated Changes
 presentation as the main Phase 6 view. It provides:
 
 - real predictions over all 384 keyframes;
@@ -265,9 +265,9 @@ presentation as the main Phase 6 view. It provides:
   clear unavailable status and an explicit ground-truth boundary;
 - expandable model and threshold details.
 
-The UI draws boxes from model output. They are not manually curated. Existing
-research endpoints remain unchanged while the public documentation focuses on
-this object-localization step.
+The UI draws boxes from model output. They are not manually curated. The
+application view links to the practical object-finding workflow; this page keeps
+the underlying predictions and their limits visible for review.
 
 ## How to run
 
@@ -307,7 +307,7 @@ Set-Location ..
 uv run --extra cuda visual-memory-lab serve-ui
 ```
 
-Open `http://127.0.0.1:8000/lab/objects`.
+Open `http://127.0.0.1:8000/research/objects`.
 
 The default runtime request is `auto`: it selects CUDA when
 `torch.cuda.is_available()` is true and otherwise uses CPU. For the normal

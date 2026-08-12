@@ -45,6 +45,22 @@ Expensive model work runs offline. The browser reads prepared artifacts instead 
 
 The detailed design is in [System Design and Architecture](docs/system_design_and_architecture.md).
 
+## The landing page
+
+The root page (`/`) is a deliberate starting point, not another research
+dashboard. It asks what kind of work the visitor wants to do:
+
+- **Use Visual Memory** opens `/app`, the technician-facing workflow for asking
+  about an earlier office view, finding candidate objects, comparing visits,
+  and opening the supporting evidence.
+- **System Insights** opens `/research`, the engineering-facing workflow for
+  checking retrieval quality, zones, detector and mask outputs, 3D evidence,
+  associations, and known failure cases.
+
+Both views use the same prepared office artifacts and API. The difference is
+the question being answered: `/app` helps someone inspect an office, while
+`/research` helps someone understand how reliable the system is.
+
 ## Data and models
 
 ### 7-Scenes Office
@@ -112,13 +128,18 @@ Open `http://127.0.0.1:8000`.
 Useful pages:
 
 ```text
-/                 Ask memory
-/lab/evaluation   Retrieval evidence
-/lab/failures     Failure browser
-/lab/zones        Office place zones
-/lab/objects      Object predictions and masks
-/lab/object-evidence       RGB-D evidence
-/lab/object-association    Cross-visit candidates
+/                 Landing page: choose a workflow
+/app              Technician view: ask memory
+/app/objects      Find candidate objects
+/app/compare      Compare two visits
+/app/evidence     Open supporting evidence
+/research         Research overview
+/research/evaluation       Retrieval evaluation
+/research/failures         Failure browser
+/research/zones             Office place zones
+/research/objects           Detector and mask outputs
+/research/evidence          RGB-D evidence
+/research/associations      Cross-visit candidates
 ```
 
 ## Build the real-image artifacts
