@@ -610,8 +610,8 @@ No single dataset needs to support every research question.
 
 | Dataset role | Required properties | Supported claims |
 |---|---|---|
-| Controlled simulator | Exact state, identity, pose, and scripted changes | Event, temporal, identity, and change ground truth |
 | 7-Scenes Office | Real RGB-D traversals and supplied camera poses | Real-image place retrieval, route coverage, and cross-traversal alignment |
+| ETH Office | Real RGB images, coloured point clouds, and recorded transforms | Object localization, visible geometry, and cautious cross-visit association |
 | Controlled repeated-visit scene | Verified visit order, repeated viewpoints, annotated changes | Previous-visit retrieval and real state-change evaluation |
 | Operational pilot data | Real workflow, capture constraints, and user questions | Usability, latency, coverage, and domain value |
 
@@ -620,9 +620,8 @@ sequence identifiers should not be treated as verified chronology, and its
 images do not provide controlled object-change labels.
 
 A controlled change dataset does not need to contain private household images.
-It can use a neutral tabletop, mock workstation, lab corner, game environment,
-or other deliberately constructed scene with public-safe objects and scripted
-changes.
+It can use a neutral tabletop, mock workstation, or lab corner with public-safe
+objects and scripted changes.
 
 ## Evaluation framework
 
@@ -856,7 +855,7 @@ Visual Memory Lab should not claim that:
 - a generated explanation is ground truth;
 - temporal retrieval alone is a learned world model;
 - supplied camera pose demonstrates a working localisation system;
-- a simulator result automatically transfers to field conditions;
+- a benchmark result automatically transfers to field conditions;
 - one domain-specific pilot establishes universal deployment readiness.
 
 Clear boundaries make the positive results more credible.

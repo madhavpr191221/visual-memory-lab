@@ -2,7 +2,7 @@
 
 ## Objective
 
-Phase 3 moves the project from controlled MiniGrid observations to a public
+Phase 3 establishes the real-office place-memory pipeline using a public
 real-world dataset. It asks one concrete question:
 
 > Given a camera image from a new pass through an office, can CLIP retrieve a
@@ -11,7 +11,7 @@ real-world dataset. It asks one concrete question:
 The experiment uses the Office scene from the publicly available 7-Scenes
 dataset, which Microsoft Research provides for non-commercial use. It does not
 train or fine-tune a model. The purpose is to measure how useful the frozen
-Phase 2 representation is when viewpoint, camera path, clutter, and visual
+The representation must remain useful when viewpoint, camera path, clutter, and visual
 appearance vary naturally.
 
 This phase also adds a separate text-query experiment. A cloud VLM looks only
@@ -86,15 +86,14 @@ Each real-image observation contains:
 - camera-to-world 4 by 4 matrix;
 - camera translation in metres.
 
-The memory artifact now supports a generic RGB contract and a separate image
-root. The original MiniGrid `agent_view` contract remains valid. Simulator
-queries still return action context, while real-image queries return sequence,
-frame number, translation, score, and resolved image path.
+The memory artifact supports a generic RGB contract and a separate image root.
+Real-image queries return sequence, frame number, translation, score, and
+resolved image path.
 
 ## Memory construction
 
 Both splits use the same pinned `openai/clip-vit-base-patch32` checkpoint and
-the Phase 2 preprocessing contract. Every vector is a normalized 512-dimensional
+the pinned CLIP preprocessing contract. Every vector is a normalized 512-dimensional
 `float32` embedding. Retrieval remains exact cosine search; no approximate index
 is introduced.
 

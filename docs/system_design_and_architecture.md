@@ -1,359 +1,258 @@
-# Visual Memory Lab: System Design and Architecture
+# Visual Memory Lab: Office System Design
 
-## 1. What this system is
+## 1. Purpose
 
-Visual Memory Lab is a research system for answering questions about earlier
-visual observations. It is aimed at a technician, inspector, or facilities
-worker who revisits the same office or work area and later needs evidence:
+Visual Memory Lab is an evidence-first system for remembering real office spaces. It is aimed at a technician, inspector, or facilities worker who revisits an area and later asks:
 
-> “Where was the chair last seen, and what evidence supports that answer?”
+> “Where was this object or workstation seen before, and what evidence supports the answer?”
 
-The system is not a general office chatbot. Its central rule is:
+The system separates four things that are often confused:
 
 ```text
-retrieve evidence first → interpret it second → state the limits clearly
+retrieval → perception → association → interpretation
 ```
 
-The current implementation is a local modular monolith. Expensive perception
-and indexing jobs run offline and write versioned artifacts. A FastAPI service
-loads those artifacts, and a React/TypeScript application lets a person inspect
-the evidence.
+Retrieval finds candidate observations. Perception identifies visible image regions. Association ranks whether regions from different visits could correspond. Interpretation explains the evidence while stating what remains uncertain.
 
-## 2. Current architecture at a glance
+## 2. System at a glance
 
 ```mermaid
 flowchart LR
-    D[Public datasets\n7-Scenes Office · ETH Office]
-    P[Offline pipelines\nmanifest · embeddings · detection · masks · RGB-D · association]
-    A[Versioned artifacts\nJSONL · images · masks · embeddings · summaries]
+    D[7-Scenes Office and ETH Office RGB/RGB-D recordings]
+    P[Offline preparation and perception]
+    A[Versioned local artifacts]
     F[FastAPI resource loader]
-    API[Read-only API]
-    UI[React/TypeScript explorer]
+    API[Domain API]
+    UI[React and TypeScript evidence explorer]
     U[Technician or reviewer]
-    V[Optional VLM audit]
+    V[Optional VLM pseudo-audit]
 
     D --> P --> A --> F --> API --> UI --> U
-    V -. explicit review .-> P
-    V -. cached judgments .-> A
+    V -. selected evidence .-> A
 ```
 
-The arrows are intentionally asymmetric. The browser does not rerun Grounding
-DINO, SAM, CLIP indexing, or the VLM for every page load. It reads an artifact
-that has already been produced, checked, and given a claim boundary.
+The browser does not run CLIP indexing, object detection, segmentation, RGB-D processing, or VLM analysis during ordinary page loads. Those jobs run offline and write inspectable artifacts.
 
-## 3. Main subsystems
+## 3. Data sources
 
-### Dataset and manifest layer
+### 7-Scenes Office
 
-The project uses three kinds of data:
+7-Scenes Office supplies RGB frames and recorded camera poses. It supports place-memory evaluation: whether a retrieved image comes from a sufficiently nearby physical viewpoint.
 
-- 7-Scenes Office RGB frames and camera poses for place memory;
-- ETH ASL Change Detection Office recordings with RGB images, coloured point
-  clouds, and recorded transforms.
+The repository uses an official 6,000-memory / 4,000-query split. Sequence IDs identify recordings, but they are not treated as calendar timestamps.
 
-Preparation code validates the expected files, chooses deterministic keyframes,
-and writes manifests. A manifest is the stable link between a source frame and
-its metadata: observation, frame index, logical visit, pose, and image path.
+### ETH Office
 
-### Representation and retrieval layer
+The ETH Office recording supplies RGB images, coloured point clouds, and recorded transforms for four logical office visits. It supports object localization, visible 3D evidence, and cautious cross-visit comparison.
 
-The visual-memory path uses frozen CLIP ViT-B/32 embeddings. Text questions and
-images are mapped into the same normalized vector space, then searched with an
-exact in-memory index. The retrieval result carries evidence metadata rather
-than only a similarity score:
+The data is referenced locally and is not redistributed.
 
-- image and observation identifier;
-- episode or logical visit;
-- camera pose;
-- place-zone label when available;
-- temporal and spatial evaluation metadata.
+## 4. Offline pipeline
 
-### Object perception layer
+```mermaid
+flowchart TD
+    R[Raw office recording]
+    M[Validated manifest]
+    K[Deterministic keyframes]
+    C[CLIP embeddings]
+    Z[Place-zone assignments]
+    O[Object boxes and masks]
+    G[RGB-D visible geometry]
+    X[Cross-visit candidate scores]
+    J[Optional cached VLM review]
 
-The ETH object baseline uses frozen models:
+    R --> M --> K
+    K --> C
+    K --> Z
+    K --> O
+    O --> G
+    O --> X
+    G --> X
+    X --> J
+```
 
-1. Grounding DINO predicts candidate boxes for chairs, bins, and boxes.
-2. SAM 2.1 predicts a mask for each candidate box.
-3. The artifact stores the raw frame, overlay, mask, scores, and model
-   provenance.
+Every run records its inputs, configuration, model identifiers, and output paths. Images, masks, embeddings, JSONL records, and summaries remain separate so that a reviewer can inspect the source evidence without loading the entire run into memory.
 
-The detector identifies a category. The segmenter estimates pixels. Neither
-operation proves that two detections are the same physical object.
+## 5. Retrieval layer
 
-### RGB-D evidence layer
+CLIP ViT-B/32 maps an image or text query to a normalized vector. The baseline uses exact search over the stored vectors.
 
-The ETH bags do not provide a simple depth image plus intrinsics. They provide
-registered RGB-coloured point clouds and camera/world transforms. The pipeline
-links a mask to compatible coloured points and summarizes the visible subset in
-the shared world frame:
+```math
+s(q,x_i) = \frac{q \cdot x_i}{\lVert q \rVert_2\lVert x_i \rVert_2}
+```
 
-- valid point count;
-- robust centroid;
-- 5th–95th percentile spatial extent;
-- source frame and detection identifiers.
+The result includes the source observation ID, image path, score, sequence/visit metadata, camera pose where available, and evaluation context.
 
-This is approximate visible geometry, not a complete object reconstruction.
+Retrieval is not the final answer. A visually similar workstation may be in the wrong area or from the wrong visit, so place and visit metadata remain part of the evidence.
 
-### Cross-visit association layer
+## 6. Place and zone layer
 
-The association baseline compares same-class detections from different logical
-visits. It combines:
+The 7-Scenes pipeline evaluates retrieval against recorded camera poses. It reports coverage, hit@k, translation error, and rotation error.
 
-- frozen CLIP crop appearance similarity;
-- mask area and shape compatibility;
-- detector/mask/point-cloud evidence quality;
-- approximate 3D position compatibility.
+The office zone vocabulary is a human-readable organization of recurring visual landmarks, such as:
 
-It returns `likely_same`, `possible_match`, or `uncertain`. A large spatial
-distance can support a **possible movement** hypothesis, but does not establish
-identity or prove that a person moved the object.
+- window-side dual-monitor workstation;
+- bookshelf between workstations;
+- central aisle by bookshelf;
+- interior-window paired desks.
 
-### Optional VLM audit layer
+Zones improve browsing and query interpretation, but they are not precise room boundaries or geometric ground truth.
 
-The VLM is a separate, explicit action. It reviews selected RGB evidence or
-candidate pairs and returns a structured pseudo-judgment. It is cached with the
-prompt version, model, image hashes, and parsed response. VLM judgments are
-useful for failure analysis but are not human ground truth.
+## 7. Object perception layer
 
-### Serving layer
-
-`AppConfig` contains paths to the memory indexes, zones, evaluation artifacts,
-object artifacts, RGB-D artifacts, and association artifacts. At startup,
-FastAPI loads available resources into `AppResources`. Missing optional
-artifacts do not prevent the rest of the application from serving.
-
-The API is read-only for ordinary browsing. It exposes search, evaluation,
-place-zone, object, RGB-D, and association payloads plus allowlisted image
-files.
-
-### UI layer
-
-The React application is organized around evidence views:
+The ETH object pipeline uses two frozen models:
 
 ```text
-App / Layout
-├── Ask memory
-├── Evidence Lab
+Grounding DINO → candidate box
+SAM 2.1       → candidate pixel mask
+```
+
+Grounding DINO answers “where might an office chair, bin, or box be?” SAM 2.1 answers “which visible pixels belong to that candidate?”
+
+The artifact stores:
+
+- raw frame ID and visit;
+- detector box and score;
+- segmentation mask and score;
+- overlay image;
+- model names and configuration;
+- optional cached audit status.
+
+Neither model establishes persistent identity across visits. A prediction is evidence about one frame.
+
+## 8. RGB-D evidence layer
+
+The ETH data provides coloured point clouds and recorded transforms rather than a simple depth image plus intrinsics. The pipeline links visible mask pixels to compatible points and summarizes the visible subset in a shared room frame.
+
+For visible points (P = \{p_i\}), the robust centroid is:
+
+```math
+\bar p = \operatorname{median}_{p_i \in P}(p_i)
+```
+
+The output also records point count and a robust spatial extent. This is partial visible geometry, not a complete object reconstruction. Different viewpoints can expose different surfaces even when the physical object has not changed.
+
+## 9. Cross-visit association
+
+Association ranks candidate detections from different logical visits. It combines appearance, shape, evidence quality, and approximate room-frame position:
+
+```math
+S(a,b) = w_a A(a,b) + w_s S_{shape}(a,b) + w_g G(a,b) + w_e E(a,b)
+```
+
+The current output is intentionally cautious:
+
+- `likely_same`;
+- `possible_match`;
+- `uncertain`.
+
+A large position difference can support a possible movement hypothesis, but it does not prove that the two detections are the same physical object or that a person moved it.
+
+## 10. Artifact architecture
+
+| Artifact | Contents | Consumer |
+| --- | --- | --- |
+| Office manifest | frame IDs, visits, poses, source paths | preparation and evaluation |
+| Memory index | normalized embeddings and metadata | retrieval API |
+| Zone artifact | zone definitions and frame assignments | zone pages and evaluation |
+| Object localization | boxes, masks, overlays, scores | object page |
+| RGB-D evidence | visible points, centroids, extents | evidence page and association |
+| Association artifact | candidate pairs, scores, claim boundaries | compare-visits page |
+| VLM audit | cached structured judgments and provenance | failure analysis |
+
+JSONL records are streamable and inspectable. Large images, masks, and embeddings remain separate files. The API exposes only allow-listed artifact files.
+
+## 11. Domain API
+
+```text
+GET  /api/health
+GET  /api/capabilities
+GET  /api/memory
+GET  /api/memory/evaluation
+POST /api/search/text
+POST /api/search/image
+GET  /api/images/{collection}/{observation_id}
+GET  /api/zones
+GET  /api/zones/{slug}
+GET  /api/objects
+GET  /api/objects/images/{image_id}
+GET  /api/evidence
+GET  /api/associations
+GET  /api/queries
+GET  /api/queries/{query_id}
+POST /api/analyze/text
+POST /api/analyze/image
+```
+
+The API is read-only for ordinary browsing. Optional cloud analysis is a separate, explicit action and is disabled without an API key.
+
+## 12. UI structure
+
+```text
+Ask memory
+├── Evidence
 ├── Failures
 ├── Zones
 ├── Objects
 ├── 3D evidence
-└── Object identity
+└── Compare visits
 ```
 
-The UI keeps local retrieval separate from optional cloud analysis. It shows
-the image, mask, scores, pose or 3D summary, and limitations next to any
-interpretation.
+Each page shows evidence beside the interpretation:
 
-## 4. Artifact architecture
+- source frame and visit;
+- image, crop, box, or mask;
+- score and provenance;
+- pose or geometry summary;
+- a plain-language claim boundary.
 
-```mermaid
-flowchart TD
-    R[Raw public recording]
-    M[Validated manifest]
-    K[Deterministic keyframes]
-    X[Model outputs]
-    G[Geometry / association summaries]
-    J[Optional audit judgments]
-    S[Compact run summary]
-    R --> M --> K --> X --> G
-    X --> J
-    G --> S
-    J --> S
+The UI should prefer “possible match” or “not enough evidence” over an unsupported definitive answer.
+
+## 13. Evaluation and failure boundaries
+
+The system measures:
+
+- pose coverage and hit@1/5/10;
+- translation and rotation error;
+- zone agreement;
+- cross-traversal retrieval quality;
+- detector and mask evidence;
+- RGB-D point coverage;
+- association score and uncertainty.
+
+The most important boundaries are:
+
+```text
+similarity ≠ physical identity
+not detected ≠ absent
+visible geometry ≠ complete object model
+candidate match ≠ verified movement
+sequence order ≠ calendar time
+VLM review ≠ human ground truth
 ```
 
-The main artifact families are:
+## 14. Scaling path
 
-| Artifact | Contents | Why it exists |
-| --- | --- | --- |
-| Memory index | embeddings, records, source metadata | exact visual retrieval |
-| Object localization | `frames.jsonl`, `detections.jsonl`, masks, overlays, `run.json` | inspectable detector output |
-| RGB-D evidence | `evidence.jsonl`, centroids, extents, `run.json` | visible room-frame geometry |
-| Association | crop embeddings, `associations.jsonl`, `run.json` | ranked cross-visit candidates |
-| VLM audit | cached structured judgments and summaries | failure review without repeat calls |
+The current system is a local modular monolith suitable for research iteration. If a real deployment required larger scale, the same stages could become:
 
-JSONL keeps records streamable and inspectable. Images and masks remain files
-so a reviewer can open them directly. Compact summaries make acceptance runs
-easy to compare without loading every image or embedding.
-
-## 5. End-to-end flows
-
-### Text-to-memory retrieval
-
-```mermaid
-sequenceDiagram
-    participant U as User
-    participant R as React
-    participant F as FastAPI
-    participant C as CLIP encoder
-    participant I as Exact memory index
-    U->>R: Ask a visual question
-    R->>F: POST /api/search/text
-    F->>C: Encode question
-    C-->>F: Normalized query vector
-    F->>I: Search stored embeddings
-    I-->>F: Ranked records and metadata
-    F-->>R: Evidence response
-    R-->>U: Images, scores, poses, limitations
+```text
+ingestion service
+→ asynchronous GPU jobs
+→ object storage and metadata database
+→ vector index with exact reranking
+→ evidence API
+→ authenticated technician UI
 ```
 
-### Object and RGB-D evidence
+That expansion should follow measured workload and reliability needs. The current artifact boundary keeps the research system understandable.
 
-```mermaid
-flowchart LR
-    RGB[ETH RGB frames]
-    DET[Grounding DINO boxes]
-    SEG[SAM 2.1 masks]
-    PC[RGB-coloured point cloud]
-    E[Visible 3D evidence]
-    PAGE[RGB-D comparison page]
-    RGB --> DET --> SEG --> E
-    RGB --> PC --> E
-    E --> PAGE
-```
+## 15. Design principles
 
-### Cross-visit association
-
-```mermaid
-flowchart LR
-    A[Visit A detections]
-    B[Visit B detections]
-    C[Same-class candidate pairs]
-    V[CLIP crop appearance]
-    H[Mask and evidence quality]
-    P[3D position compatibility]
-    S[Transparent association score]
-    L[Likely / possible / uncertain]
-    A --> C
-    B --> C
-    C --> V --> S
-    C --> H --> S
-    C --> P --> S
-    S --> L
-```
-
-## 6. Important interfaces
-
-The primary Python boundaries are:
-
-- `ClipEncoder`: frozen image/text representation;
-- `MemoryIndex` and `MemoryStore`: persisted retrieval data;
-- object localization: detector and segmenter orchestration;
-- RGB-D evidence builder: point-cloud linkage and geometric summaries;
-- object association: candidate scoring and movement boundary;
-- showcase loaders: artifact-to-public-payload conversion;
-- `AppConfig` and `AppResources`: service configuration and startup resources.
-
-Representative API families are:
-
-| Route | Reads | Purpose |
-| --- | --- | --- |
-| `/api/search/text` | memory index | text-to-image retrieval |
-| `/api/search/image` | memory index | image-to-image retrieval |
-| `/api/objects` | localization artifact | object predictions |
-| `/api/evidence` | RGB-D artifact | visible 3D evidence |
-| `/api/associations` | association artifact | candidate pairs and scores |
-| `/api/zones` | zone artifact | semantic place vocabulary |
-| `/api/memory/evaluation` | evaluation artifact | retrieval metrics |
-
-The response contract is evidence-first. A route can say that a model produced
-a box or that two detections are a candidate pair. It must not silently turn
-that into object absence, persistent identity, or definite movement.
-
-## 7. Current capability boundaries
-
-| Capability | Status | Evidence | Allowed claim |
-| --- | --- | --- | --- |
-| Place retrieval | Implemented | CLIP embeddings, pose, zones | “This memory is relevant to the place/query.” |
-| Object localization | Implemented | detector boxes and masks | “The model predicts a chair here.” |
-| RGB-D evidence | Implemented | coloured point clouds and transforms | “Visible geometry appears here.” |
-| Cross-visit association | Baseline | score components and candidates | “These may be the same object.” |
-| Movement | Tentative | candidate identity plus displacement | “Possible movement.” |
-| Persistent identity | Not established | requires validated labels | no definitive identity claim |
-| Added/removed reasoning | Future | requires visibility and temporal logic | not currently supported |
-
-Missing coverage, occlusion, detector failure, and reconstruction ambiguity are
-first-class failure modes. A missing detection is not proof that an object was
-absent.
-
-## 8. Target architecture and staged evolution
-
-The long-term application can evolve toward this shape:
-
-```mermaid
-flowchart LR
-    C[Camera or uploaded inspection data]
-    I[Ingestion and synchronization]
-    P[Perception\ndetection · masks · depth]
-    MM[Memory\nplaces · objects · visits]
-    W[Association and world-state estimate]
-    Q[Question and retrieval service]
-    E[Evidence UI]
-    C --> I --> P --> MM --> W --> Q --> E
-```
-
-The stages are deliberately incremental:
-
-1. **Current research system:** offline manifests and artifacts, local FastAPI,
-   React evidence views.
-2. **Object-memory evaluation:** reviewed pair labels, visibility checks, and
-   stronger association metrics.
-3. **State-change reasoning:** added, removed, moved, unchanged, and unknown
-   outcomes grounded in comparable visits.
-4. **Online ingestion:** synchronize a live camera stream, pose, RGB, and depth
-   into visit records.
-5. **Operational deployment:** replace local files selectively with durable
-   object storage, metadata storage, job queues, model services, authentication,
-   monitoring, and retention policies.
-
-Queues, databases, distributed inference, and edge deployment are target
-architecture only. They are not claims about the current repository.
-
-## 9. Reliability, privacy, and operations
-
-- Public datasets are cited and not redistributed through generated artifacts.
-- Private household imagery is not required for the public project.
-- VLM calls are explicit, optional, cached, and separated from ordinary local
-  retrieval.
-- Model revisions, prompts, thresholds, device, and source paths are recorded
-  in run metadata where practical.
-- Deterministic sampling and seeded simulator trajectories make experiments
-  reproducible.
-- CUDA is preferred when available; CPU remains a supported fallback.
-- Logical visit order is not a calendar timestamp.
-- The system must preserve uncertainty instead of converting weak evidence into
-  a confident technician instruction.
-
-## 10. Testing and observability
-
-| Layer | Verification |
-| --- | --- |
-| Data preparation | expected files, dimensions, poses, and deterministic sampling |
-| Representation | normalized embeddings and encoder compatibility |
-| Perception | artifact schema, masks, boxes, model provenance |
-| RGB-D | valid point handling, centroid/extent calculations, missing evidence |
-| Association | same-class filtering, score thresholds, displacement boundaries |
-| API | temporary-artifact loading, allowlisted images, missing-resource errors |
-| UI | TypeScript build, route rendering, visible limitations and score breakdown |
-| Research acceptance | run summaries, audited examples, failure categories, manual review |
-
-The most important observable counts are not only successes. Empty frames,
-unsupported detections, uncertain pairs, missing point-cloud evidence, and
-coverage failures are retained because they explain when the system should not
-answer confidently.
-
-## 11. Design principles
-
-1. **Evidence before answers.** Every interpretation should point back to
-   inspectable images, masks, geometry, or metadata.
-2. **Offline first for research.** Expensive processing is reproducible and
-   reviewable before it becomes a service dependency.
-3. **Separate category from identity.** “This looks like a chair” is not “this
-   is the same chair.”
-4. **Separate observation change from world change.** Camera viewpoint,
-   occlusion, lighting, and reconstruction quality can change the evidence.
-5. **Measure before training.** A learned component should target a measured
-   failure, not be added simply because the system is incomplete.
-6. **Keep the prototype honest.** The current modular monolith is useful for
-   research and portfolio demonstration; production architecture is a later
-   evolution, not an implied property of the local app.
+1. Retrieve evidence before generating prose.
+2. Keep expensive perception offline and reproducible.
+3. Preserve source IDs and model provenance.
+4. Separate place, object, geometry, identity, and interpretation.
+5. Measure coverage before blaming retrieval.
+6. Make uncertainty visible to the user.
+7. Do not claim more than the dataset can establish.
+8. Add complexity only when a measured failure requires it.
