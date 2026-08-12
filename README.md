@@ -1,6 +1,6 @@
 # Visual Memory Lab
 
-Visual Memory Lab is a small research project about finding useful evidence in a history of images. It now works with both controlled MiniGrid trajectories and the publicly available 7-Scenes Office research dataset.
+Visual Memory Lab is a small research project about finding useful evidence in a history of real office images. It uses the publicly available 7-Scenes Office and ETH Office research datasets.
 
 The current Phase 6.1 work adds automatic RGB object localization over 384 dense office
 keyframes. Frozen Grounding DINO predictions and SAM 2.1 masks replace the
@@ -15,8 +15,6 @@ redistributed.
 
 The basic problem is simple: a camera may record thousands of observations over time, but storing those images is not enough. When someone asks about an earlier event, the system must retrieve the right image even if the viewpoint, lighting, surroundings, or appearance of an object has changed.
 
-The project begins in MiniGrid, where an agent moves through rooms and corridors and records what it sees. The simulator gives us exact information about each observation, including the agent's position, direction, visible objects, episode, and timestep. This makes it possible to check whether a retrieved image is genuinely relevant rather than merely similar-looking.
-
 ## A real-world example
 
 Imagine a maintenance technician making weekly rounds through a factory. A body camera or phone records images during each inspection. Several weeks later, a leak is found near a blue valve, and the technician wants to know:
@@ -27,8 +25,6 @@ A normal image search may return other blue valves because they look similar. A 
 
 The same idea could support building inspections, construction progress reviews, field service, environmental surveys, or accessibility tools that help people recall where an object was last seen.
 
-MiniGrid is used as a controlled test bench for this problem. It provides repeatable experiments and reliable ground truth without requiring a physical robot or collecting personal images.
-
 ## Research question
 
 > Can a visual memory system retrieve the right past observation when viewpoint, time, occlusion, or scene appearance changes?
@@ -37,12 +33,12 @@ This is different from asking whether two images look alike. The most visually s
 
 ## How the project will work
 
-1. Generate reproducible navigation trajectories in MiniGrid.
-2. Save each RGB observation with simulator metadata.
-3. Create CLIP embeddings for the stored images.
-4. Store the embeddings in a simple flat index.
-5. Retrieve past observations using a text query or another image.
-6. Compare the results with simulator ground truth.
+1. Prepare public office recordings and deterministic manifests.
+2. Create CLIP embeddings for stored RGB images.
+3. Store embeddings and metadata in a simple exact index.
+4. Retrieve past observations using text or another image.
+5. Add pose, zone, object, and RGB-D evidence where available.
+6. Inspect the evidence and its limitations in the local UI.
 
 Each retrieved result will include the image, similarity score, episode, timestep, agent pose, nearby actions, and visible objects.
 
@@ -72,14 +68,10 @@ Each case will show the query, the retrieved observation, the simulator ground t
 
 ## Current status
 
-Phases 1 through 5 and the first Phase 6.1 object-localization step are implemented. The repository can generate reproducible
-MiniGrid inspection trajectories, search them with frozen CLIP ViT-B/32, and
-evaluate real-image place memory on 10,000 7-Scenes Office frames:
+The repository searches real office imagery with frozen CLIP ViT-B/32, evaluates
+place memory on 10,000 7-Scenes Office frames, and adds ETH Office object and
+RGB-D evidence:
 
-- egocentric RGB frames showing what the agent sees;
-- a full-map overview for each episode;
-- agent position, direction, action, seed, and logical time;
-- stable object identities and visible-object metadata;
 - deterministic JSON manifests for later retrieval experiments;
 - persistent normalized image embeddings;
 - exact text-to-image and image-to-image retrieval;
@@ -115,8 +107,6 @@ The current implementation and target evolution are described in
 [System Design and Architecture](docs/system_design_and_architecture.md).
 The longer-term product and research thesis is documented in
 [Visual Memory Lab: Research and Application Direction](docs/visual_memory_lab_research_and_application_direction.md).
-The Phase 2 design and real-model results are documented in
-[docs/phases/02_visual_memory.md](docs/phases/02_visual_memory.md).
 The best single guide to the real-image system is
 [Phases 3 and 4: The Real-Office Visual Memory System](docs/phases/03_04_real_office_visual_memory_system.md).
 It follows the complete path from the public dataset and VLM-assisted zone
@@ -229,15 +219,13 @@ The project uses Python 3.13 and `uv`.
 
 ```powershell
 uv sync
-uv run visual-memory-lab generate `
-  --episodes 10 `
-  --seed 42 `
-  --max-steps 100 `
-  --output data/trajectories/phase-01-demo
+uv run visual-memory-lab prepare-7-scenes `
+  --input data/7-scenes/office `
+  --output outputs/phase3/office
 
 uv run visual-memory-lab index `
-  --input data/trajectories/phase-01-demo `
-  --output outputs/phase-02-clip-index
+  --input outputs/phase3/office/train `
+  --output outputs/phase3/train-index
 
 uv run visual-memory-lab query `
   --index outputs/phase-02-clip-index `
@@ -277,9 +265,8 @@ Then open `http://127.0.0.1:8000`. Search remains local. If `.env` contains an
 OpenAI API key, the interface offers a separate confirmation step before it
 sends a question and up to five selected public evidence frames for analysis.
 
-The default research run contains 10 episodes and 380 observations. Generated
-images, manifests, embeddings, and model weights remain local and are ignored
-by Git. Choose a new output directory for each generated run or index; commands
+Generated images, manifests, embeddings, and model weights remain local and are
+ignored by Git. Choose a new output directory for each generated run or index; commands
 will not replace an existing non-empty directory.
 
 Run the test suite with:
