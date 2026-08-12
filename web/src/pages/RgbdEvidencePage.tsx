@@ -14,7 +14,7 @@ export function RgbdEvidencePage() {
 
   useEffect(() => {
     let ignore = false;
-    api.phase612().then((result) => { if (!ignore) { setData(result); setPair(result.comparisons[0]?.id ?? ""); } })
+    api.evidence().then((result) => { if (!ignore) { setData(result); setPair(result.comparisons[0]?.id ?? ""); } })
       .catch((reason: Error) => { if (!ignore) setError(reason.message); });
     return () => { ignore = true; };
   }, []);

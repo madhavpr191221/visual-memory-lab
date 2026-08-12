@@ -23,17 +23,17 @@ function Layout() {
         </NavLink>
         <nav aria-label="Main navigation">
           <NavLink to="/" end>Ask memory</NavLink>
-          <NavLink to="/lab/evaluation">Evidence Lab</NavLink>
+          <NavLink to="/lab/evaluation">Evidence</NavLink>
           <NavLink to="/lab/failures">Failures</NavLink>
           <NavLink to="/lab/zones">Zones</NavLink>
           <NavLink to="/lab/objects">Objects</NavLink>
           <NavLink to="/lab/object-evidence">3D evidence</NavLink>
-          <NavLink to="/lab/object-association">Object identity</NavLink>
+          <NavLink to="/lab/object-association">Compare visits</NavLink>
         </nav>
       </header>
       <main className={styles.main}><Outlet /></main>
       <footer className={styles.footer}>
-        Public office data | Visual memory | 3D state-change evidence
+        Public office data | Visual memory | Evidence before answers
       </footer>
     </div>
   );
@@ -52,7 +52,6 @@ export default function App() {
         <Route path="lab/objects" element={<ObjectsPage />} />
         <Route path="lab/object-evidence" element={<RgbdEvidencePage />} />
         <Route path="lab/object-association" element={<AssociationPage />} />
-        <Route path="lab/changes" element={<Navigate to="/lab/objects" replace />} />
       </Route>
     </Routes>
   );

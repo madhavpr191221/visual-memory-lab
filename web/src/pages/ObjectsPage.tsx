@@ -32,7 +32,7 @@ export function ObjectsPage() {
     let ignore = false;
     async function load() {
       try {
-        const result = await api.phase6b1();
+        const result = await api.objects();
         if (!ignore) {
           setData(result);
           // Keep the permissive research threshold available, but begin at the

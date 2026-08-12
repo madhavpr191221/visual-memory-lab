@@ -34,8 +34,8 @@ class AssociationShowcase:
                     **detection,
                     "observation": frame["observation"],
                     "message_index": frame["message_index"],
-                    "image_url": f"/api/phase6b1/images/{str(frame['frame_id']).replace(':', '-')}-raw",
-                    "mask_url": f"/api/phase6b1/images/{detection_id.replace(':', '-')}-mask",
+                    "image_url": f"/api/objects/images/{str(frame['frame_id']).replace(':', '-')}-raw",
+                    "mask_url": f"/api/objects/images/{detection_id.replace(':', '-')}-mask",
                 }
             pairs.append(enriched)
         return cls(payload={"phase": "6.1.3", "claim_boundary": run["claim_boundary"], "metrics": run, "pairs": pairs, "classes": list(run["classes"])})
