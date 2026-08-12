@@ -2,6 +2,7 @@ import type {
   AnalysisResponse,
   Capabilities,
   QueryPage,
+  TechnicianBenchmark,
   SearchResponse,
   Zone,
   Phase6b1Showcase,
@@ -60,6 +61,7 @@ export const api = {
   },
   query: (id: string) =>
     request<Record<string, unknown>>(`/api/queries/${encodeURIComponent(id)}`),
+  technicianBenchmark: () => request<TechnicianBenchmark>("/api/technician-benchmark"),
   analyzeText: (question: string, evidenceIds: string[]) =>
     request<AnalysisResponse>("/api/analyze/text", {
       method: "POST",

@@ -36,6 +36,7 @@ from visual_memory_lab.ui_service import (
     ZoneCatalog,
 )
 from visual_memory_lab.vlm_analysis import EvidenceAnalyzer
+from visual_memory_lab.technician_benchmark import load_questions
 
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 ALLOWED_IMAGE_TYPES = {"image/png", "image/jpeg"}
@@ -57,6 +58,8 @@ class AppConfig:
     rgbd_evidence: Path = Path("outputs/phase612/rgbd-evidence")
     associations: Path = Path("outputs/phase613/associations")
     association_audit: Path = Path("outputs/phase613/vlm-audit")
+    technician_questions: Path = Path("data/phase7/technician_questions.jsonl")
+    technician_output: Path = Path("outputs/phase7/technician-benchmark")
 
 
 @dataclass
@@ -185,6 +188,40 @@ def create_app(
             "query_count": len(current().queries),
             "model_id": current().memory.model_id,
             "model_revision": current().memory.model_revision,
+        }
+
+    @app.get("/api/technician-benchmark")
+    def technician_benchmark() -> dict[str, object]:
+        try:
+            questions = load_questions(resolved_config.technician_questions)
+        except (OSError, ValueError) as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        summary_path = resolved_config.technician_output / "summary.json"
+        summary: dict[str, object] | None = None
+        if summary_path.is_file():
+            try:
+                summary = json.loads(summary_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                summary = None
+        return {
+            "question_count": len(questions),
+            "questions": [
+                {
+                    "question_id": item.question_id,
+                    "question": item.question,
+                    "category": item.category,
+                    "dataset": item.dataset,
+                    "source_observation_id": item.source_observation_id,
+                    "answerability": item.answerability,
+                    "expected_zone": item.expected_zone,
+                    "expected_visit": item.expected_visit,
+                    "expected_object_class": item.expected_object_class,
+                    "expected_artifact": item.expected_artifact,
+                    "rationale": item.rationale,
+                }
+                for item in questions
+            ],
+            "summary": summary,
         }
 
     @app.post("/api/search/text", response_model=SearchResponse)

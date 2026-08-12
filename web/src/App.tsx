@@ -6,6 +6,7 @@ import { HomePage } from "./pages/HomePage";
 import { LandingPage } from "./pages/LandingPage";
 import { ObjectsPage } from "./pages/ObjectsPage";
 import { QueryDetailPage } from "./pages/QueryDetailPage";
+import { TechnicianTasksPage } from "./pages/TechnicianTasksPage";
 import { RgbdEvidencePage } from "./pages/RgbdEvidencePage";
 import { ZoneDetailPage } from "./pages/ZoneDetailPage";
 import { ZonesPage } from "./pages/ZonesPage";
@@ -34,6 +35,7 @@ function Header() {
           <NavLink to="/app/objects">Find objects</NavLink>
           <NavLink to="/app/compare">Compare visits</NavLink>
           <NavLink to="/app/evidence">Evidence</NavLink>
+          <NavLink to="/app/tasks">Task check</NavLink>
         </>}
       </nav>
     </header>
@@ -52,6 +54,7 @@ export default function App() {
       <Route path="app/objects" element={<ObjectsPage />} />
       <Route path="app/evidence" element={<RgbdEvidencePage />} />
       <Route path="app/compare" element={<AssociationPage />} />
+      <Route path="app/tasks" element={<TechnicianTasksPage />} />
       <Route path="research" element={<EvaluationPage />} />
       <Route path="research/evaluation" element={<EvaluationPage />} />
       <Route path="research/failures" element={<FailuresPage />} />

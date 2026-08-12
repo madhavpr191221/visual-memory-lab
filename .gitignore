@@ -16,6 +16,8 @@ wheels/
 
 # Generated trajectories and local outputs
 data/*
+!data/phase7/
+!data/phase7/technician_questions.jsonl
 !data/.gitkeep
 outputs/*
 !outputs/.gitkeep
