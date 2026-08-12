@@ -111,6 +111,8 @@ The interface keeps ordinary retrieval local. Cloud analysis is a separate,
 confirmed action and remains disabled when no OpenAI API key is configured.
 
 The full research plan is available in [docs/visual_memory_lab_plan.md](docs/visual_memory_lab_plan.md).
+The current implementation and target evolution are described in
+[System Design and Architecture](docs/system_design_and_architecture.md).
 The longer-term product and research thesis is documented in
 [Visual Memory Lab: Research and Application Direction](docs/visual_memory_lab_research_and_application_direction.md).
 The Phase 2 design and real-model results are documented in
