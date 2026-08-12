@@ -178,6 +178,15 @@ def create_app(
             analysis_available=current().analysis is not None
         )
 
+    @app.get("/api/memory")
+    def memory_summary() -> dict[str, object]:
+        return {
+            "memory_count": len(current().memory),
+            "query_count": len(current().queries),
+            "model_id": current().memory.model_id,
+            "model_revision": current().memory.model_revision,
+        }
+
     @app.post("/api/search/text", response_model=SearchResponse)
     def search_text(request: TextSearchRequest) -> dict[str, object]:
         try:
