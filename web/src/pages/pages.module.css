@@ -16,6 +16,7 @@
 .primary:disabled { opacity: .5; cursor: not-allowed; }
 .upload { margin-bottom: 12px; display: block; padding: 18px; border: 1px dashed var(--blue); border-radius: 14px; background: var(--blue-soft); }
 .upload input { display: block; margin-top: 8px; width: 100%; }
+.searchPanel > textarea { display: block; width: 100%; min-height: 82px; margin-top: 16px; resize: vertical; border: 1px solid var(--line); border-radius: 14px; padding: 18px; background: var(--paper); color: var(--ink); font-size: 18px; line-height: 1.45; }
 .examples { margin-top: 18px; display: flex; flex-wrap: wrap; gap: 8px; }
 .examples button { border: 1px solid var(--line); background: var(--surface); color: var(--muted); padding: 8px 11px; border-radius: 999px; font-size: 12px; }
 .examples button:hover { color: var(--blue); border-color: var(--blue); }
@@ -243,6 +244,9 @@
 .selectedEvidence { border-color: var(--blue); box-shadow: 0 0 0 2px rgba(53, 101, 135, .16); }
 .inspectionComparison { margin-top: 24px; padding: 24px; }
 .inspectionSummary, .inspectionReport { margin-top: 24px; padding: 24px; }
+.currentPhoto { margin-top: 24px; padding: 24px; }
+.currentPhoto h2 { margin: 6px 0 14px; }
+.currentPhoto img { display: block; width: min(620px, 100%); max-height: 360px; object-fit: contain; border-radius: 12px; background: var(--surface-2); }
 .inspectionSummary h2, .inspectionReport h2 { margin: 6px 0 10px; }
 .summaryColumns { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 14px; }
 .summaryColumns > div { padding: 13px; border-radius: 10px; background: var(--surface-2); }
