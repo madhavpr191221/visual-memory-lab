@@ -24,6 +24,7 @@ function Header() {
       </NavLink>
       <nav aria-label={research ? "System insights navigation" : "Application navigation"}>
         {research ? <>
+          <NavLink to="/app" className={styles.workspaceLink}>Application</NavLink>
           <NavLink to="/research" end>Overview</NavLink>
           <NavLink to="/research/evaluation">Evaluation</NavLink>
           <NavLink to="/research/failures">Failures</NavLink>
@@ -33,12 +34,9 @@ function Header() {
           <NavLink to="/research/associations">Associations</NavLink>
         </> : <>
           <NavLink to="/app" end>Ask memory</NavLink>
-          <NavLink to="/app/objects">Find objects</NavLink>
-          <NavLink to="/app/compare">Compare visits</NavLink>
-          <NavLink to="/app/evidence">Evidence</NavLink>
-          <NavLink to="/app/tasks">Task check</NavLink>
           <NavLink to="/app/inspect">Inspect</NavLink>
           <NavLink to="/app/inspections">History</NavLink>
+          <NavLink to="/research" className={styles.workspaceLink}>Research</NavLink>
         </>}
       </nav>
     </header>

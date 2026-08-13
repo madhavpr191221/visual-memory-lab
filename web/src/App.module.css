@@ -8,6 +8,7 @@
 .header nav { display: flex; align-items: center; gap: 4px; }
 .header nav a { color: var(--muted); text-decoration: none; font-size: 14px; font-weight: 650; padding: 9px 12px; border-radius: 10px; }
 .header nav a:hover, .header nav a[aria-current="page"] { color: var(--blue); background: var(--blue-soft); }
+.header nav a.workspaceLink { margin-left: 8px; border: 1px solid var(--line); color: var(--blue); background: var(--surface); }
 .main { width: min(1280px, calc(100% - 40px)); margin: 0 auto; flex: 1; padding: 52px 0 80px; }
 .footer { border-top: 1px solid var(--line); padding: 24px; text-align: center; color: var(--muted); font-size: 12px; }
 @media (max-width: 760px) { .header { height: auto; align-items: flex-start; padding: 16px 20px; gap: 16px; } .header nav { flex-wrap: wrap; justify-content: flex-end; } .brand small { display: none; } .main { width: min(100% - 28px, 1280px); padding-top: 32px; } }

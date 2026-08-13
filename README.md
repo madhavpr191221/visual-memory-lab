@@ -137,13 +137,9 @@ Useful pages:
 
 ```text
 /                 Landing page: choose a workflow
-/app              Technician view: ask memory
-/app/objects      Find candidate objects
-/app/compare      Compare two visits
-/app/evidence     Open supporting evidence
-/app/tasks        Technician-style task benchmark
-/app/inspect      Start an office inspection
-/app/inspections  Saved inspection history
+/app              Office assistant: ask memory
+/app/inspect      Office assistant: inspect a current photo
+/app/inspections  Office assistant: saved history
 /research         Research overview
 /research/evaluation       Retrieval evaluation
 /research/failures         Failure browser
@@ -152,6 +148,10 @@ Useful pages:
 /research/evidence          RGB-D evidence
 /research/associations      Cross-visit candidates
 ```
+
+The application navigation intentionally stays small: Ask memory, Inspect, and
+History. The detailed routes `/app/objects`, `/app/compare`, `/app/evidence`,
+and `/app/tasks` remain available for focused review but are not primary tabs.
 
 The inspection workflow can summarize an uploaded current photo, compare it
 with a selected earlier memory, and produce a cautious technician report with

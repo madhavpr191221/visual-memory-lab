@@ -41,11 +41,10 @@ The browser does not run CLIP indexing, object detection, segmentation, RGB-D pr
 
 The landing page (`/`) is a choice page with two workspace entry points:
 
-- `/app` is the **Use Visual Memory** workspace for technicians and users. It
-  is organized around practical tasks such
-  as asking where something was seen, finding an object, comparing visits, and
-  opening evidence.
-- `/research` is the **System Insights** workspace for reviewers and engineers.
+- `/app` is the **Office assistant** workspace for technicians and users. Its
+  primary actions are Ask memory, Inspect, and History. Object lookup,
+  comparison, and evidence details appear inside those workflows when needed.
+- `/research` is the **Research workspace** for reviewers and engineers.
   It is organized around questions
   such as retrieval quality, detector coverage, zone assignments, geometry,
   association candidates, and failure modes.
@@ -224,9 +223,12 @@ Landing page (/) — choose a workspace
     └── Associations
 ```
 
-The technician pages keep the question and evidence together. The research
-pages expose measurements and intermediate artifacts without making the
-technician navigate through them.
+The primary technician navigation contains only Ask memory, Inspect, and
+History. The technician pages keep the question and evidence together. The
+research pages expose measurements and intermediate artifacts without making
+the technician navigate through them. The detailed routes for objects, visit
+comparison, evidence, and task checks remain available for focused review but
+are not shown as primary technician tabs.
 
 Each evidence-bearing page shows:
 
