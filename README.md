@@ -87,6 +87,7 @@ Used for object-aware evidence. The recordings contain RGB images, coloured poin
 5. **RGB-D object evidence:** summarize visible object geometry in the recorded room frame.
 6. **Cross-visit association:** rank cautious candidate matches across visits.
 7. **Technician task benchmark:** evaluate manually authored office questions with evidence and safe-abstention labels.
+8. **Office inspection assistant:** ask a question, review evidence, optionally compare an earlier view, and save a local inspection record.
 
 The detailed phase documents are listed in the [docs/phases](docs/phases) directory.
 
@@ -110,6 +111,12 @@ GET  /api/associations
 ```
 
 The ordinary retrieval path is local. Cloud analysis is a separate, explicit action and is unavailable unless `OPENAI_API_KEY` is configured.
+
+Technician retrieval searches a wider candidate pool and suppresses nearby duplicate
+frames when other relevant traversals are available. The first result remains the
+strongest visual match; later cards are labelled as another traversal or related
+office view. Images in `data/phase8/upload-examples` are split into known-frame
+examples and held-out sequence examples for honest demonstrations.
 
 ## Run the office UI
 
@@ -135,6 +142,8 @@ Useful pages:
 /app/compare      Compare two visits
 /app/evidence     Open supporting evidence
 /app/tasks        Technician-style task benchmark
+/app/inspect      Start an office inspection
+/app/inspections  Saved inspection history
 /research         Research overview
 /research/evaluation       Retrieval evaluation
 /research/failures         Failure browser
@@ -143,6 +152,12 @@ Useful pages:
 /research/evidence          RGB-D evidence
 /research/associations      Cross-visit candidates
 ```
+
+The inspection workflow can summarize an uploaded current photo, compare it
+with a selected earlier memory, and produce a cautious technician report with
+visible conditions, evidence citations, limitations, and a recommended manual
+check. The summary and report require `OPENAI_API_KEY`; local retrieval and
+side-by-side evidence remain available without it.
 
 ## Build the real-image artifacts
 

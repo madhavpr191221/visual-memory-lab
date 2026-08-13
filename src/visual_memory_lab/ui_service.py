@@ -14,6 +14,9 @@ from PIL import Image
 from visual_memory_lab.memory_store import MemoryStore, StoredMemory
 
 SEARCH_K = 10
+SEARCH_CANDIDATES = 100
+MAX_RESULTS_PER_SEQUENCE = 2
+MIN_FRAME_SEPARATION = 20
 DISPLAY_K_VALUES = (3, 5, 10)
 
 
@@ -179,8 +182,12 @@ class OfficeMemoryService:
     ) -> dict[str, object]:
         if display_k not in DISPLAY_K_VALUES:
             raise ValueError("display_k must be 3, 5, or 10")
-        results = self.memory.search(vector, top_k=SEARCH_K)
-        evidence = [self._stored_memory_payload(result, "memory") for result in results]
+        candidates = self.memory.search(vector, top_k=SEARCH_CANDIDATES)
+        results = self._diversify_results(candidates, limit=SEARCH_K)
+        evidence = [
+            self._stored_memory_payload(result, "memory", result_kind=kind, display_rank=index)
+            for index, (result, kind) in enumerate(results, start=1)
+        ]
         zone_slugs = [
             str(item["zone"]["slug"])
             for item in evidence
@@ -190,6 +197,9 @@ class OfficeMemoryService:
         return {
             "query": query,
             "display_k": display_k,
+            "retrieval_mode": "technician_diverse",
+            "candidate_count": len(candidates),
+            "diversity_note": "Nearby frames are suppressed when other relevant traversals are available.",
             "temporal": {
                 "captured_at": None,
                 "message": "Calendar time is unavailable for this public dataset.",
@@ -197,6 +207,67 @@ class OfficeMemoryService:
             "likely_area": agreement,
             "evidence": evidence,
         }
+
+    def _diversify_results(
+        self, candidates: list[StoredMemory], *, limit: int
+    ) -> list[tuple[StoredMemory, str]]:
+        """Select useful views while avoiding a wall of adjacent video frames."""
+        selected: list[StoredMemory] = []
+        selected_kinds: list[str] = []
+
+        def sequence(record: dict[str, object]) -> str:
+            return str(record.get("sequence_id", record.get("episode_id", "unknown")))
+
+        def step(record: dict[str, object]) -> int | None:
+            value = record.get("step")
+            return int(value) if isinstance(value, (int, float)) else None
+
+        def zone(record: dict[str, object]) -> str | None:
+            observation_id = str(record.get("observation_id"))
+            return self.zones.assignments.get(observation_id)
+
+        def add(candidate: StoredMemory, kind: str) -> None:
+            selected.append(candidate)
+            selected_kinds.append(kind)
+
+        # First pass: distinct traversals and well-separated views.
+        for candidate in candidates:
+            if len(selected) >= limit:
+                break
+            record = candidate.record
+            seq = sequence(record)
+            same_sequence = [item.record for item in selected if sequence(item.record) == seq]
+            if len(same_sequence) >= MAX_RESULTS_PER_SEQUENCE:
+                continue
+            current_step = step(record)
+            if current_step is not None and any(
+                step(item) is not None and abs(current_step - int(step(item))) < MIN_FRAME_SEPARATION
+                for item in same_sequence
+            ):
+                continue
+            kind = "best visual match" if not selected else (
+                "same area, another traversal" if seq != sequence(selected[0].record) else "related office view"
+            )
+            add(candidate, kind)
+
+        # If the corpus has too few separated views, relax only the frame gap.
+        for candidate in candidates:
+            if len(selected) >= limit or candidate in selected:
+                continue
+            seq = sequence(candidate.record)
+            if sum(sequence(item.record) == seq for item in selected) >= MAX_RESULTS_PER_SEQUENCE:
+                continue
+            kind = "same area, another traversal" if seq != sequence(selected[0].record) else "additional view"
+            add(candidate, kind)
+
+        # Small fixtures or single-traversal corpora still return the requested count.
+        for candidate in candidates:
+            if len(selected) >= limit or candidate in selected:
+                continue
+            seq = sequence(candidate.record)
+            kind = "same area, another traversal" if selected and seq != sequence(selected[0].record) else "additional view"
+            add(candidate, kind)
+        return list(zip(selected, selected_kinds, strict=True))
 
     def _zone_agreement(
         self,
@@ -231,14 +302,19 @@ class OfficeMemoryService:
         }
 
     def _stored_memory_payload(
-        self, result: StoredMemory, collection: str
+        self,
+        result: StoredMemory,
+        collection: str,
+        *,
+        result_kind: str = "",
+        display_rank: int | None = None,
     ) -> dict[str, object]:
         record = result.record
         observation_id = str(record["observation_id"])
         slug = self.zones.assignments.get(observation_id)
         zone = self.zones.zones.get(slug) if slug else None
         return {
-            "rank": result.rank,
+            "rank": display_rank if display_rank is not None else result.rank,
             "score": result.score,
             "observation_id": observation_id,
             "collection": collection,
@@ -251,6 +327,7 @@ class OfficeMemoryService:
                 else None
             ),
             "image_url": f"/api/images/{collection}/{observation_id}",
+            "result_kind": result_kind,
         }
 
     def zone_list(self) -> list[dict[str, object]]:

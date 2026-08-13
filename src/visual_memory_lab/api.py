@@ -24,6 +24,10 @@ from visual_memory_lab.rgbd_showcase import RgbdShowcase
 from visual_memory_lab.api_models import (
     AnalysisRequest,
     AnalysisResponse,
+    InspectionCompareRequest,
+    InspectionCreateRequest,
+    InspectionReportRequest,
+    InspectionSummaryRequest,
     SearchResponse,
     TextSearchRequest,
 )
@@ -36,6 +40,7 @@ from visual_memory_lab.ui_service import (
     ZoneCatalog,
 )
 from visual_memory_lab.vlm_analysis import EvidenceAnalyzer
+from visual_memory_lab.inspection_store import InspectionStore
 from visual_memory_lab.technician_benchmark import load_questions
 
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024
@@ -58,6 +63,7 @@ class AppConfig:
     rgbd_evidence: Path = Path("outputs/phase612/rgbd-evidence")
     associations: Path = Path("outputs/phase613/associations")
     association_audit: Path = Path("outputs/phase613/vlm-audit")
+    inspection_db: Path = Path("outputs/phase8/inspections.sqlite3")
     technician_questions: Path = Path("data/phase7/technician_questions.jsonl")
     technician_output: Path = Path("outputs/phase7/technician-benchmark")
 
@@ -71,6 +77,7 @@ class AppResources:
     objects: ObjectShowcase | None = None
     rgbd: RgbdShowcase | None = None
     associations: AssociationShowcase | None = None
+    inspections: InspectionStore | None = None
 
 
 def load_resources(config: AppConfig) -> AppResources:
@@ -127,6 +134,7 @@ def load_resources(config: AppConfig) -> AppResources:
         objects=objects,
         rgbd=rgbd,
         associations=associations,
+        inspections=InspectionStore(config.inspection_db),
     )
 
 
@@ -189,6 +197,202 @@ def create_app(
             "model_id": current().memory.model_id,
             "model_revision": current().memory.model_revision,
         }
+
+    @app.get("/api/inspections")
+    def inspections() -> list[dict[str, object]]:
+        return current().inspections.list() if current().inspections else []
+
+    @app.get("/api/inspections/{inspection_id}")
+    def inspection_detail(inspection_id: str) -> dict[str, object]:
+        try:
+            return current().inspections.get(inspection_id)  # type: ignore[union-attr]
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail="inspection not found") from error
+
+    @app.post("/api/inspections")
+    def create_inspection(request: InspectionCreateRequest) -> dict[str, object]:
+        if len(request.evidence_ids) != len(set(request.evidence_ids)):
+            raise HTTPException(status_code=422, detail="evidence IDs must be unique")
+        evidence: list[dict[str, object]] = []
+        for rank, observation_id in enumerate(request.evidence_ids, start=1):
+            try:
+                record = next((item for item in current().memory.records() if item.get("observation_id") == observation_id), None)
+                if record is None:
+                    raise KeyError(observation_id)
+            except (KeyError, ValueError) as error:
+                raise HTTPException(status_code=422, detail=str(error)) from error
+            evidence.append({"observation_id": observation_id, "collection": "memory", "rank": rank, "score": None, "role": "supporting"})
+        result = current().inspections.create(  # type: ignore[union-attr]
+            title=request.title,
+            question=request.question,
+            result_text=("Inspection saved with selected visual evidence." if evidence else "Inspection saved; select evidence before drawing a conclusion."),
+            status=("supported_with_limits" if evidence else "insufficient_evidence"),
+            limitations=["Saved evidence does not establish persistent object identity or movement."],
+            current_image_path=None,
+            evidence=evidence,
+        )
+        return result
+
+    @app.post("/api/inspections/with-image")
+    async def create_inspection_with_image(
+        title: Annotated[str, Form()] = "Office inspection",
+        question: Annotated[str, Form()] = "Where was this office area seen before?",
+        evidence_ids: Annotated[str, Form()] = "[]",
+        image: UploadFile = File(...),
+    ) -> dict[str, object]:
+        try:
+            parsed_ids = json.loads(evidence_ids)
+            request = InspectionCreateRequest(title=title, question=question, evidence_ids=parsed_ids)
+        except (json.JSONDecodeError, ValidationError) as error:
+            raise HTTPException(status_code=422, detail="invalid inspection form") from error
+        decoded = await _read_upload(image)
+        try:
+            result = create_inspection(request)
+            upload_root = (resolved_config.inspection_db.parent / "uploads").resolve()
+            upload_root.mkdir(parents=True, exist_ok=True)
+            image_path = upload_root / f"{result['id']}.jpg"
+            decoded.save(image_path, format="JPEG", quality=92)
+            return current().inspections.set_current_image(str(result["id"]), str(image_path))  # type: ignore[union-attr]
+        finally:
+            decoded.close()
+
+    @app.get("/api/inspections/{inspection_id}/current-image")
+    def inspection_current_image(inspection_id: str) -> FileResponse:
+        try:
+            inspection = current().inspections.get(inspection_id)  # type: ignore[union-attr]
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail="inspection not found") from error
+        path = inspection.get("current_image_path")
+        if not path or not Path(str(path)).is_file():
+            raise HTTPException(status_code=404, detail="inspection has no current image")
+        return FileResponse(Path(str(path)))
+
+    @app.post("/api/inspections/{inspection_id}/compare")
+    def compare_inspection(inspection_id: str, request: InspectionCompareRequest) -> dict[str, object]:
+        try:
+            inspection = current().inspections.get(inspection_id)  # type: ignore[union-attr]
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail="inspection not found") from error
+        try:
+            earlier = next((item for item in current().memory.records() if item.get("observation_id") == request.earlier_observation_id), None)
+            if earlier is None:
+                raise KeyError(request.earlier_observation_id)
+        except (KeyError, ValueError) as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+        current_evidence = inspection.get("evidence", [])
+        current_path = inspection.get("current_image_path")
+        current_item = next((item for item in current().memory.records() if item.get("observation_id") == (current_evidence[0].get("observation_id") if current_evidence else None)), None)
+        current_side = {
+            "image_url": f"/api/inspections/{inspection_id}/current-image" if current_path else (f"/api/images/memory/{current_item['observation_id']}" if current_item else None),
+            "observation_id": current_item.get("observation_id") if current_item else None,
+            "sequence_id": current_item.get("sequence_id", current_item.get("episode_id")) if current_item else None,
+            "frame": current_item.get("frame") if current_item else None,
+            "zone": current_item.get("zone") if current_item else None,
+            "label": "Current view",
+        }
+        earlier_side = {
+            "image_url": f"/api/images/memory/{request.earlier_observation_id}",
+            "observation_id": request.earlier_observation_id,
+            "sequence_id": earlier.get("sequence_id", earlier.get("episode_id")),
+            "frame": earlier.get("frame"),
+            "zone": earlier.get("zone"),
+            "label": "Earlier view",
+        }
+        limitations = ["The comparison does not establish persistent object identity or prove movement."]
+        result_text = "The two views are ready for side-by-side inspection. Any difference may be caused by viewpoint, visibility, or a real scene change."
+        if not current_side["image_url"]:
+            limitations.append("No current image or selected current memory was available.")
+        updated = current().inspections.update_comparison(inspection_id, earlier_observation_id=request.earlier_observation_id, result_text=result_text, status="manual_review_required", limitations=limitations)  # type: ignore[union-attr]
+        earlier_observation = earlier.get("observation", earlier.get("observation_id"))
+        association_matches = []
+        if current().associations is not None:
+            association_matches = [
+                pair for pair in current().associations.payload.get("pairs", [])
+                if isinstance(pair, dict) and str(pair.get("earlier_observation")) == str(earlier_observation)
+            ]
+        rgbd_matches = []
+        if current().rgbd is not None:
+            rgbd_matches = [
+                item for item in current().rgbd.payload.get("comparisons", [])
+                if isinstance(item, dict) and str(item.get("earlier_observation")) == str(earlier_observation)
+            ]
+        return {
+            "inspection_id": inspection_id,
+            "current": current_side,
+            "earlier": earlier_side,
+            "current_evidence": current_evidence,
+            "updated_inspection": updated,
+            "status": "manual_review_required",
+            "explanation": result_text,
+            "limitations": limitations,
+            "supporting_artifacts": {
+                "association_candidates": association_matches[:10],
+                "rgbd_candidates": rgbd_matches[:10],
+                "note": "These artifacts are supporting candidates only; they do not establish identity or movement.",
+            },
+        }
+
+    @app.post("/api/inspection-summary/image")
+    async def inspection_summary_image(image: UploadFile = File(...)) -> dict[str, object]:
+        decoded = await _read_upload(image)
+        try:
+            try:
+                return analyzer().summarize_image(decoded)  # type: ignore[no-any-return]
+            except ValueError as error:
+                raise HTTPException(status_code=422, detail=str(error)) from error
+            except RuntimeError as error:
+                raise HTTPException(status_code=502, detail=str(error)) from error
+        finally:
+            decoded.close()
+
+    @app.post("/api/inspections/{inspection_id}/summary")
+    def save_inspection_summary(inspection_id: str, request: InspectionSummaryRequest) -> dict[str, object]:
+        try:
+            current().inspections.get(inspection_id)  # type: ignore[union-attr]
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail="inspection not found") from error
+        summary = request.model_dump(mode="json")
+        return current().inspections.set_summary(inspection_id, summary)  # type: ignore[union-attr]
+
+    @app.post("/api/inspections/{inspection_id}/report")
+    def inspection_report(inspection_id: str, request: InspectionReportRequest) -> dict[str, object]:
+        try:
+            inspection = current().inspections.get(inspection_id)  # type: ignore[union-attr]
+            earlier = next((item for item in current().memory.records() if item.get("observation_id") == request.earlier_observation_id), None)
+            if earlier is None:
+                raise KeyError(request.earlier_observation_id)
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail="inspection or earlier observation not found") from error
+        evidence_ids = [request.earlier_observation_id]
+        for item in inspection.get("evidence", []):
+            candidate = str(item.get("observation_id"))
+            if candidate not in evidence_ids:
+                evidence_ids.append(candidate)
+            if len(evidence_ids) == 5:
+                break
+        try:
+            evidence = selected_evidence(evidence_ids)
+            current_image = None
+            current_path = inspection.get("current_image_path")
+            if current_path and Path(str(current_path)).is_file():
+                current_image = Image.open(Path(str(current_path))).convert("RGB")
+            try:
+                report = analyzer().report(question=request.question, evidence=evidence, query_image=current_image)  # type: ignore[union-attr]
+            finally:
+                if current_image is not None:
+                    current_image.close()
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+        except RuntimeError as error:
+            raise HTTPException(status_code=502, detail=str(error)) from error
+        updated = current().inspections.set_report(  # type: ignore[union-attr]
+            inspection_id,
+            report,
+            result_text=str(report["summary"]),
+            status=str(report["status"]),
+            limitations=[str(item) for item in report.get("limitations", [])],
+        )
+        return {**report, "inspection": updated}
 
     @app.get("/api/technician-benchmark")
     def technician_benchmark() -> dict[str, object]:

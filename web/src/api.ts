@@ -3,6 +3,10 @@ import type {
   Capabilities,
   QueryPage,
   TechnicianBenchmark,
+  InspectionRecord,
+  InspectionComparison,
+  InspectionReport,
+  VisualSummary,
   SearchResponse,
   Zone,
   Phase6b1Showcase,
@@ -62,6 +66,18 @@ export const api = {
   query: (id: string) =>
     request<Record<string, unknown>>(`/api/queries/${encodeURIComponent(id)}`),
   technicianBenchmark: () => request<TechnicianBenchmark>("/api/technician-benchmark"),
+  inspections: () => request<InspectionRecord[]>("/api/inspections"),
+  inspection: (id: string) => request<InspectionRecord>(`/api/inspections/${encodeURIComponent(id)}`),
+  createInspection: (title: string, question: string, evidenceIds: string[]) => request<InspectionRecord>("/api/inspections", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title, question, evidence_ids: evidenceIds }) }),
+  createInspectionWithImage: (title: string, question: string, evidenceIds: string[], image: File) => {
+    const body = new FormData();
+    body.append("title", title); body.append("question", question); body.append("evidence_ids", JSON.stringify(evidenceIds)); body.append("image", image);
+    return request<InspectionRecord>("/api/inspections/with-image", { method: "POST", body });
+  },
+  compareInspection: (id: string, earlierObservationId: string) => request<InspectionComparison>(`/api/inspections/${encodeURIComponent(id)}/compare`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ earlier_observation_id: earlierObservationId }) }),
+  summarizeInspectionImage: (image: File) => { const body = new FormData(); body.append("image", image); return request<VisualSummary>("/api/inspection-summary/image", { method: "POST", body }); },
+  saveInspectionSummary: (id: string, summary: VisualSummary) => request<InspectionRecord>(`/api/inspections/${encodeURIComponent(id)}/summary`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(summary) }),
+  inspectionReport: (id: string, question: string, earlierObservationId: string) => request<InspectionReport>(`/api/inspections/${encodeURIComponent(id)}/report`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question, earlier_observation_id: earlierObservationId }) }),
   analyzeText: (question: string, evidenceIds: string[]) =>
     request<AnalysisResponse>("/api/analyze/text", {
       method: "POST",

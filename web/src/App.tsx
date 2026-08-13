@@ -7,6 +7,7 @@ import { LandingPage } from "./pages/LandingPage";
 import { ObjectsPage } from "./pages/ObjectsPage";
 import { QueryDetailPage } from "./pages/QueryDetailPage";
 import { TechnicianTasksPage } from "./pages/TechnicianTasksPage";
+import { InspectionDetailPage, InspectionPage, InspectionsPage } from "./pages/InspectionPage";
 import { RgbdEvidencePage } from "./pages/RgbdEvidencePage";
 import { ZoneDetailPage } from "./pages/ZoneDetailPage";
 import { ZonesPage } from "./pages/ZonesPage";
@@ -36,6 +37,8 @@ function Header() {
           <NavLink to="/app/compare">Compare visits</NavLink>
           <NavLink to="/app/evidence">Evidence</NavLink>
           <NavLink to="/app/tasks">Task check</NavLink>
+          <NavLink to="/app/inspect">Inspect</NavLink>
+          <NavLink to="/app/inspections">History</NavLink>
         </>}
       </nav>
     </header>
@@ -55,6 +58,9 @@ export default function App() {
       <Route path="app/evidence" element={<RgbdEvidencePage />} />
       <Route path="app/compare" element={<AssociationPage />} />
       <Route path="app/tasks" element={<TechnicianTasksPage />} />
+      <Route path="app/inspect" element={<InspectionPage />} />
+      <Route path="app/inspections" element={<InspectionsPage />} />
+      <Route path="app/inspections/:id" element={<InspectionDetailPage id={window.location.pathname.split("/").pop() ?? ""} />} />
       <Route path="research" element={<EvaluationPage />} />
       <Route path="research/evaluation" element={<EvaluationPage />} />
       <Route path="research/failures" element={<FailuresPage />} />

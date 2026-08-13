@@ -27,6 +27,7 @@ export interface EvidenceItem {
   captured_at: null;
   zone: ZoneSummary | null;
   image_url: string;
+  result_kind?: string;
 }
 
 export interface SearchResponse {
@@ -41,6 +42,9 @@ export interface SearchResponse {
     strength: EvidenceStrength;
   } | null;
   evidence: EvidenceItem[];
+  retrieval_mode?: string;
+  candidate_count?: number;
+  diversity_note?: string;
 }
 
 export interface AnalysisResponse {
@@ -99,6 +103,62 @@ export interface TechnicianBenchmark {
   question_count: number;
   questions: TechnicianQuestion[];
   summary: Record<string, unknown> | null;
+}
+
+export interface InspectionRecord {
+  id: string;
+  title: string;
+  question: string;
+  created_at: string;
+  status: string;
+  result_text: string;
+  limitations: string[];
+  selected_earlier_observation_id: string | null;
+  evidence?: { observation_id: string; role: string; rank: number | null }[];
+  summary_json?: VisualSummary | null;
+  report_json?: InspectionReport | null;
+}
+
+export interface InspectionComparisonSide {
+  image_url: string | null;
+  observation_id: string | null;
+  sequence_id: string | null;
+  frame: number | null;
+  zone: ZoneSummary | null;
+  label: string;
+}
+
+export interface InspectionComparison {
+  inspection_id: string;
+  current: InspectionComparisonSide;
+  earlier: InspectionComparisonSide;
+  status: string;
+  explanation: string;
+  limitations: string[];
+  updated_inspection: InspectionRecord;
+}
+
+export interface VisualSummary {
+  summary: string;
+  visible_objects: string[];
+  visible_conditions: string[];
+  limitations: string[];
+  model: string;
+  cached: boolean;
+}
+
+export interface InspectionReport {
+  status: "observed" | "possible_difference" | "insufficient_evidence" | "manual_review_required";
+  summary: string;
+  visible_objects: string[];
+  visible_conditions: string[];
+  comparison_observations: string[];
+  supporting_evidence: { observation_id: string; claim: string }[];
+  limitations: string[];
+  recommended_manual_check: string;
+  model: string;
+  cached: boolean;
+  inspection: InspectionRecord;
 }
 
 export interface ChangeCandidateReview {

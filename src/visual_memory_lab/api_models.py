@@ -54,6 +54,7 @@ class EvidenceItem(ApiModel):
     captured_at: None = None
     zone: ZoneSummary | None
     image_url: str
+    result_kind: str = ""
 
 
 class SearchResponse(ApiModel):
@@ -62,6 +63,33 @@ class SearchResponse(ApiModel):
     temporal: TemporalCapability
     likely_area: LikelyArea | None
     evidence: list[EvidenceItem]
+    retrieval_mode: str = ""
+    candidate_count: int = 0
+    diversity_note: str = ""
+
+
+class InspectionCreateRequest(ApiModel):
+    title: str = Field(default="Office inspection", min_length=1, max_length=160)
+    question: str = Field(min_length=1, max_length=500)
+    evidence_ids: list[str] = Field(default_factory=list, max_length=5)
+
+
+class InspectionCompareRequest(ApiModel):
+    earlier_observation_id: str = Field(min_length=1)
+
+
+class InspectionReportRequest(ApiModel):
+    question: str = Field(min_length=1, max_length=500)
+    earlier_observation_id: str = Field(min_length=1)
+
+
+class InspectionSummaryRequest(ApiModel):
+    summary: str = Field(min_length=1, max_length=2000)
+    visible_objects: list[str] = Field(default_factory=list, max_length=30)
+    visible_conditions: list[str] = Field(default_factory=list, max_length=30)
+    limitations: list[str] = Field(default_factory=list, max_length=30)
+    model: str = ""
+    cached: bool = False
 
 
 class EvidenceCitation(ApiModel):

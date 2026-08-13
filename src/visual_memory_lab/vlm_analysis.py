@@ -37,6 +37,24 @@ class GroundedJudgment(StrictModel):
     limitations: list[str]
 
 
+class VisualSummary(StrictModel):
+    summary: str
+    visible_objects: list[str]
+    visible_conditions: list[str]
+    limitations: list[str]
+
+
+class InspectionReport(StrictModel):
+    status: Literal["observed", "possible_difference", "insufficient_evidence", "manual_review_required"]
+    summary: str
+    visible_objects: list[str]
+    visible_conditions: list[str]
+    comparison_observations: list[str]
+    supporting_evidence: list[EvidenceCitation]
+    limitations: list[str]
+    recommended_manual_check: str
+
+
 def _image_part(image: Image.Image) -> tuple[dict[str, str], str]:
     buffer = io.BytesIO()
     image.convert("RGB").save(buffer, format="JPEG", quality=90)
@@ -142,6 +160,74 @@ class EvidenceAnalyzer:
                     time.sleep(2**attempt)
         assert last_error is not None
         raise RuntimeError(f"evidence analysis failed after three attempts: {last_error}") from last_error
+
+    def summarize_image(self, image: Image.Image) -> dict[str, object]:
+        part, _ = _image_part(image)
+        content = [
+            {"type": "input_text", "text": (
+                "Describe this current office inspection photo in plain language. "
+                "List only visible objects and visible maintenance-relevant conditions. "
+                "Do not infer identity, history, ownership, or events. Mention blur, occlusion, "
+                "and missing coverage as limitations."
+            )},
+            part,
+        ]
+        parsed = self._parse(content, VisualSummary)
+        return {**parsed.model_dump(mode="json"), "model": self.model, "cached": False}
+
+    def report(
+        self,
+        *,
+        question: str,
+        evidence: list[tuple[str, Path]],
+        query_image: Image.Image | None = None,
+    ) -> dict[str, object]:
+        if not 1 <= len(evidence) <= 5:
+            raise ValueError("select between one and five evidence frames")
+        evidence_ids = [item[0] for item in evidence]
+        prompt = (
+            "You are preparing a cautious office maintenance inspection report. "
+            "Use only the supplied current photo and earlier evidence. Separate visible facts "
+            "from inference. Do not claim calendar time, persistent object identity, a person's "
+            "identity, or confirmed movement. Cite only the supplied evidence IDs. If evidence "
+            "is incomplete, use insufficient_evidence or manual_review_required.\n\n"
+            f"Maintenance question: {question.strip()}\n"
+            f"Evidence IDs: {', '.join(evidence_ids)}"
+        )
+        content: list[dict[str, str]] = [{"type": "input_text", "text": prompt}]
+        allowed_ids = list(evidence_ids)
+        if query_image is not None:
+            query_part, _ = _image_part(query_image)
+            content.extend([{"type": "input_text", "text": "Current uploaded photo (cite as current-upload if needed):"}, query_part])
+            allowed_ids.insert(0, "current-upload")
+        for observation_id, path in evidence:
+            with Image.open(path) as image:
+                part, _ = _image_part(image)
+            content.extend([{"type": "input_text", "text": f"Earlier evidence {observation_id}:"}, part])
+        parsed = self._parse(content, InspectionReport)
+        unknown = sorted({item.observation_id for item in parsed.supporting_evidence} - set(allowed_ids))
+        if unknown:
+            raise ValueError(f"report cited unknown evidence: {', '.join(unknown)}")
+        if parsed.status == "observed" and not parsed.supporting_evidence:
+            raise ValueError("an observed report must cite evidence")
+        return {**parsed.model_dump(mode="json"), "model": self.model, "cached": False}
+
+    def _parse(self, content: list[dict[str, str]], schema: type[StrictModel]) -> StrictModel:
+        last_error: Exception | None = None
+        for attempt in range(3):
+            try:
+                responses = getattr(self._client_value(), "responses")
+                response = responses.parse(model=self.model, input=[{"role": "user", "content": content}], text_format=schema, store=False)
+                parsed = response.output_parsed
+                if not isinstance(parsed, schema):
+                    raise ValueError("structured response did not match the required schema")
+                return parsed
+            except Exception as error:
+                last_error = error
+                if attempt < 2:
+                    time.sleep(2**attempt)
+        assert last_error is not None
+        raise RuntimeError(f"structured analysis failed after three attempts: {last_error}") from last_error
 
     def _cache_path(self, prompt: str, image_hashes: list[str]) -> Path:
         payload = json.dumps(

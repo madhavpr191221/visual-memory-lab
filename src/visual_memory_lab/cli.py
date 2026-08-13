@@ -241,6 +241,7 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         default=Path("outputs/phase7/technician-benchmark"),
     )
+    serve.add_argument("--inspection-db", type=Path, default=Path("outputs/phase8/inspections.sqlite3"))
     serve.add_argument("--device", default="auto")
     serve.add_argument("--host", default="127.0.0.1")
     serve.add_argument("--port", type=_positive_integer, default=8000)
@@ -440,6 +441,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 association_audit=args.association_audit,
                 technician_questions=args.technician_questions,
                 technician_output=args.technician_output,
+                inspection_db=args.inspection_db,
             )
         )
         uvicorn.run(app, host=args.host, port=args.port)

@@ -183,3 +183,27 @@ def test_failure_tags_and_query_page(tmp_path: Path) -> None:
     assert page["total"] == 1
     assert page["items"][0]["query_id"] == "query:0"
 
+
+def test_search_suppresses_adjacent_frames_when_other_traversals_exist(tmp_path: Path) -> None:
+    service = make_service(tmp_path)
+    records = [
+        {
+            "observation_id": f"memory:{index}",
+            "sequence_id": "seq-01" if index < 5 else "seq-03",
+            "step": index * 25,
+            "image_path": "frame.png",
+        }
+        for index in range(10)
+    ]
+    service.memory._records = records  # type: ignore[attr-defined]
+    service.memory._record_by_id = {str(row["observation_id"]): row for row in records}  # type: ignore[attr-defined]
+    service.zones.assignments.update({str(row["observation_id"]): "zone-a" for row in records})
+
+    payload = service.search_text("window desk", display_k=5)
+    evidence = payload["evidence"]
+
+    assert len(evidence) == 10
+    assert evidence[0]["result_kind"] == "best visual match"
+    assert len({item["sequence_id"] for item in evidence[:5]}) == 2
+    assert payload["retrieval_mode"] == "technician_diverse"
+

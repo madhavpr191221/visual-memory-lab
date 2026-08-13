@@ -135,7 +135,7 @@ export function HomePage() {
               <div className={styles.timeNotice}>{result.temporal.message}</div>
             </div>
           )}
-          <div className={styles.resultHeader}><h2>Visual evidence</h2><span>Select up to five images for judgment</span></div>
+          <div className={styles.resultHeader}><div><h2>Visual evidence</h2><small>{result.diversity_note}</small></div><span>Select up to five images for judgment</span></div>
           <div className={styles.evidenceGrid}>
             {visibleEvidence.map((item) => (
               <article className={`panel ${styles.evidenceCard}`} id={`evidence-${item.observation_id}`} key={item.observation_id}>
@@ -145,6 +145,7 @@ export function HomePage() {
                 <img src={item.image_url} alt={`Office memory ${item.rank}, ${item.zone?.name ?? "unassigned area"}`} />
                 <div className={styles.evidenceBody}>
                   <div className={styles.evidenceTop}><span className={styles.rank}>#{item.rank}</span><span className={styles.score}>CLIP {item.score.toFixed(3)}</span></div>
+                  {item.result_kind && <span className={styles.resultKind}>{item.result_kind}</span>}
                   <strong>{item.zone?.name ?? "Unassigned area"}</strong>
                   <small>{item.sequence_id} · frame {item.frame}</small>
                 </div>
