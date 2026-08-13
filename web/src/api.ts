@@ -8,6 +8,7 @@ import type {
   InspectionReport,
   VisualSummary,
   SearchResponse,
+  GuidedDemo,
   Zone,
   Phase6b1Showcase,
   Phase612Showcase,
@@ -39,6 +40,7 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  guidedDemo: () => request<GuidedDemo>("/api/guided-demo"),
   capabilities: () => request<Capabilities>("/api/capabilities"),
   searchText: (question: string, displayK: 3 | 5 | 10) =>
     request<SearchResponse>("/api/search/text", {

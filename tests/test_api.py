@@ -51,6 +51,18 @@ def test_health_capabilities_and_text_search(tmp_path: Path) -> None:
         assert client.get("/api/phase6a").status_code == 404
 
 
+def test_guided_demo_returns_evidence_backed_case(tmp_path: Path) -> None:
+    with _client(tmp_path) as client:
+        response = client.get("/api/guided-demo")
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["case_id"] == "window-side-workstation"
+        assert payload["current"]["image_url"].startswith("/api/images/memory/")
+        assert payload["earlier"]["observation_id"] != payload["current"]["observation_id"]
+        assert len(payload["supporting_evidence"]) >= 2
+        assert payload["limitations"]
+
+
 def test_image_search_validation_and_allowlisted_serving(tmp_path: Path) -> None:
     with _client(tmp_path) as client:
         response = client.post(

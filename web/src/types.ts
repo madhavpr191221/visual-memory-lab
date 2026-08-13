@@ -47,6 +47,19 @@ export interface SearchResponse {
   diversity_note?: string;
 }
 
+export interface GuidedDemo {
+  case_id: string;
+  title: string;
+  question: string;
+  current: EvidenceItem;
+  earlier: EvidenceItem;
+  supporting_evidence: EvidenceItem[];
+  outcome: string;
+  explanation: string;
+  manual_check: string;
+  limitations: string[];
+}
+
 export interface AnalysisResponse {
   question_type: string;
   supported: boolean;

@@ -38,6 +38,18 @@ The landing page (`/`) offers two entry points over the same prepared artifacts 
 
 The Research workspace is not a second product or separate pipeline. It makes the intermediate evidence and limitations visible so the application can be evaluated honestly.
 
+## Hiring-manager demo path
+
+For a quick walkthrough, open `/app/demo` or choose **Watch the guided case** on the landing page. The case takes about 90 seconds:
+
+```text
+office question → real retrieved views → side-by-side evidence → safe conclusion → manual check
+```
+
+It is a deterministic presentation of the existing office memory artifacts. The case is intentionally explicit about uncertainty: it demonstrates evidence selection and inspection support, not guaranteed object identity or autonomous maintenance.
+
+The walkthrough and interview-facing technical notes are in [Guided Office Inspection Demo](docs/guided_demo.md).
+
 ## Current architecture
 
 ```text

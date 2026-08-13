@@ -47,6 +47,8 @@ There is one backend and one set of prepared artifacts. The landing page present
 
 The browser does not run CLIP indexing, object detection, segmentation, or RGB-D processing during ordinary page loads. Those jobs run offline. The UI reads their outputs through the API.
 
+The guided showcase at `/app/demo` is a presentation layer over the same API. It selects a deterministic office question and two real retrieved views so a reviewer can understand the system in roughly 90 seconds without configuring a query first.
+
 ## 3. End-to-end technician flow
 
 ```text

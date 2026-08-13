@@ -198,6 +198,34 @@ def create_app(
             "model_revision": current().memory.model_revision,
         }
 
+    @app.get("/api/guided-demo")
+    def guided_demo() -> dict[str, object]:
+        """Return a deterministic, evidence-backed hiring showcase case."""
+        result = current().service.search_text(
+            "workstation beside a window", display_k=5
+        )
+        evidence = result.get("evidence", [])
+        if not isinstance(evidence, list) or len(evidence) < 2:
+            raise HTTPException(
+                status_code=404,
+                detail="guided demo requires at least two office evidence frames",
+            )
+        return {
+            "case_id": "window-side-workstation",
+            "title": "Is this the workstation beside the window?",
+            "question": "Where is the workstation beside a window?",
+            "current": evidence[0],
+            "earlier": evidence[1],
+            "supporting_evidence": evidence[:5],
+            "outcome": "The retrieved views point to a window-side workstation.",
+            "explanation": "The strongest views show a desk with two monitors directly beside a bright window. The images support the area description, but they do not establish a persistent object identity or calendar date.",
+            "manual_check": "Confirm the workstation, monitor power, cable routing, and desk stability on site.",
+            "limitations": [
+                "The public recordings provide logical sequence order, not calendar time.",
+                "Visual similarity is not proof that two views show the same physical workstation.",
+            ],
+        }
+
     @app.get("/api/inspections")
     def inspections() -> list[dict[str, object]]:
         return current().inspections.list() if current().inspections else []

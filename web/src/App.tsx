@@ -4,6 +4,7 @@ import { EvaluationPage } from "./pages/EvaluationPage";
 import { FailuresPage } from "./pages/FailuresPage";
 import { HomePage } from "./pages/HomePage";
 import { LandingPage } from "./pages/LandingPage";
+import { GuidedDemoPage } from "./pages/GuidedDemoPage";
 import { ObjectsPage } from "./pages/ObjectsPage";
 import { QueryDetailPage } from "./pages/QueryDetailPage";
 import { TechnicianTasksPage } from "./pages/TechnicianTasksPage";
@@ -52,6 +53,7 @@ export default function App() {
     <Route element={<Shell />}>
       <Route index element={<LandingPage />} />
       <Route path="app" element={<HomePage />} />
+      <Route path="app/demo" element={<GuidedDemoPage />} />
       <Route path="app/objects" element={<ObjectsPage />} />
       <Route path="app/evidence" element={<RgbdEvidencePage />} />
       <Route path="app/compare" element={<AssociationPage />} />
