@@ -1,72 +1,85 @@
-# Visual Memory Lab: Office System Design
+# Visual Memory Lab: Office System Design and Architecture
 
 ## 1. Purpose
 
-Visual Memory Lab is an evidence-first system for remembering real office spaces. It is aimed at a technician, inspector, or facilities worker who revisits an area and later asks:
+Visual Memory Lab is an evidence-first office inspection assistant. A technician can upload a current office photo or ask about a known office view, retrieve relevant earlier evidence, compare views, and save a cautious inspection report.
 
-> “Where was this object or workstation seen before, and what evidence supports the answer?”
-
-The system separates four things that are often confused:
+The system keeps four ideas separate:
 
 ```text
 retrieval → perception → association → interpretation
 ```
 
-Retrieval finds candidate observations. Perception identifies visible image regions. Association ranks whether regions from different visits could correspond. Interpretation explains the evidence while stating what remains uncertain.
+Retrieval finds candidate images. Perception identifies visible regions. Association ranks whether regions from different visits could correspond. Interpretation explains the evidence and states what remains uncertain.
 
 ## 2. System at a glance
 
 ```mermaid
 flowchart LR
-    D[7-Scenes Office and ETH Office RGB/RGB-D recordings]
+    D[Office RGB/RGB-D recordings]
+    U[Uploaded current photo]
     P[Offline preparation and perception]
     A[Versioned local artifacts]
     F[FastAPI resource loader]
     API[Domain API]
-    L[Landing page\n/]
-    APP[Use Visual Memory\n/app]
-    INS[System Insights\n/research]
+    L[Landing page /]
+    APP[Office assistant /app]
+    R[Research workspace /research]
+    H[SQLite inspection history]
     T[Technician]
-    R[Engineer or reviewer]
-    V[Optional VLM pseudo-audit]
+    E[Engineer or reviewer]
+    V[Optional VLM analysis]
 
     D --> P --> A --> F --> API
+    U --> API
     API --> L
     L --> APP --> T
-    L --> INS --> R
-    V -. selected evidence .-> A
+    L --> R --> E
+    APP --> H
+    API -. explicit selected-evidence action .-> V
+    V --> H
 ```
 
-The browser does not run CLIP indexing, object detection, segmentation, RGB-D processing, or VLM analysis during ordinary page loads. Those jobs run offline and write inspectable artifacts.
+There is one backend and one set of prepared artifacts. The landing page presents two views of that system:
 
-The landing page (`/`) is a choice page with two workspace entry points:
+- `/app` is the Office assistant. Its primary pages are Ask memory, Inspect, and History.
+- `/research` is a secondary validation view. It exposes retrieval evaluation, failure cases, zones, object masks, RGB-D evidence, and associations.
 
-- `/app` is the **Office assistant** workspace for technicians and users. Its
-  primary actions are Ask memory, Inspect, and History. Object lookup,
-  comparison, and evidence details appear inside those workflows when needed.
-- `/research` is the **Research workspace** for reviewers and engineers.
-  It is organized around questions
-  such as retrieval quality, detector coverage, zone assignments, geometry,
-  association candidates, and failure modes.
+The browser does not run CLIP indexing, object detection, segmentation, or RGB-D processing during ordinary page loads. Those jobs run offline. The UI reads their outputs through the API.
 
-This is one office evidence system with two presentations, not two separate
-pipelines or two copies of the data.
+## 3. End-to-end technician flow
 
-## 3. Data sources
+```text
+current question or uploaded photo
+          ↓
+local retrieval of earlier office evidence
+          ↓
+technician chooses an earlier view
+          ↓
+side-by-side comparison
+          ↓
+plain-language observations and limitations
+          ↓
+optional VLM-backed summary/report
+          ↓
+saved local inspection record
+```
+
+For an uploaded image, the current photo is stored locally, optionally summarized, and used as the query for retrieval. The user can choose an earlier result and compare it with the uploaded photo. A report can list visible objects, visible conditions, supporting evidence, differences that need checking, and a recommended manual check.
+
+An uploaded photo is not automatically assigned a dataset sequence, visit, camera pose, or semantic zone. The report must therefore distinguish “uploaded current photo” from a recorded office memory.
+
+## 4. Data sources and preparation
 
 ### 7-Scenes Office
 
-7-Scenes Office supplies RGB frames and recorded camera poses. It supports place-memory evaluation: whether a retrieved image comes from a sufficiently nearby physical viewpoint.
-
-The repository uses an official 6,000-memory / 4,000-query split. Sequence IDs identify recordings, but they are not treated as calendar timestamps.
+7-Scenes Office supplies RGB frames and recorded camera poses. It supports place-memory evaluation: whether a retrieved image comes from a sufficiently nearby physical viewpoint. The project uses the official 6,000-memory / 4,000-query split. Sequence order is not calendar time.
 
 ### ETH Office
 
-The ETH Office recording supplies RGB images, coloured point clouds, and recorded transforms for four logical office visits. It supports object localization, visible 3D evidence, and cautious cross-visit comparison.
+The ETH Office recording supplies RGB images, coloured point clouds, and recorded transforms for four logical office visits. It supports object localization, visible 3D evidence, and cautious cross-visit comparison. The data is referenced locally and is not redistributed.
 
-The data is referenced locally and is not redistributed.
-
-## 4. Offline pipeline
+### Offline pipeline
 
 ```mermaid
 flowchart TD
@@ -90,34 +103,23 @@ flowchart TD
     X --> J
 ```
 
-Every run records its inputs, configuration, model identifiers, and output paths. Images, masks, embeddings, JSONL records, and summaries remain separate so that a reviewer can inspect the source evidence without loading the entire run into memory.
+Each run records its input, configuration, model identifiers, and output paths. Images, masks, embeddings, JSONL records, and summaries remain separate so a reviewer can inspect source evidence without loading every artifact into memory.
 
-## 5. Retrieval layer
+## 5. Retrieval and place memory
 
-CLIP ViT-B/32 maps an image or text query to a normalized vector. The baseline uses exact search over the stored vectors.
+CLIP ViT-B/32 maps an image or text query to a normalized vector. The baseline searches every stored vector exactly:
 
 ```math
 s(q,x_i) = \frac{q \cdot x_i}{\lVert q \rVert_2\lVert x_i \rVert_2}
 ```
 
-The result includes the source observation ID, image path, score, sequence/visit metadata, camera pose where available, and evaluation context.
+In plain English, the score measures how closely the query and a stored image point in the same embedding direction. The result includes the source observation, image path, score, sequence/visit metadata, and camera pose where available.
 
-Retrieval is not the final answer. A visually similar workstation may be in the wrong area or from the wrong visit, so place and visit metadata remain part of the evidence.
+Retrieval is evidence selection, not the final answer. A visually similar workstation may be in the wrong area or from the wrong visit, so the UI shows source metadata and claim boundaries.
 
-## 6. Place and zone layer
+The 7-Scenes evaluation reports pose coverage, hit@k, translation error, and rotation error. Recurring visual landmarks are grouped into human-readable office zones such as a window-side dual-monitor workstation or a bookshelf between workstations. Zones help browsing and interpretation; they are not exact room boundaries.
 
-The 7-Scenes pipeline evaluates retrieval against recorded camera poses. It reports coverage, hit@k, translation error, and rotation error.
-
-The office zone vocabulary is a human-readable organization of recurring visual landmarks, such as:
-
-- window-side dual-monitor workstation;
-- bookshelf between workstations;
-- central aisle by bookshelf;
-- interior-window paired desks.
-
-Zones improve browsing and query interpretation, but they are not precise room boundaries or geometric ground truth.
-
-## 7. Object perception layer
+## 6. Object perception
 
 The ETH object pipeline uses two frozen models:
 
@@ -126,62 +128,48 @@ Grounding DINO → candidate box
 SAM 2.1       → candidate pixel mask
 ```
 
-Grounding DINO answers “where might an office chair, bin, or box be?” SAM 2.1 answers “which visible pixels belong to that candidate?”
+Grounding DINO proposes where an office chair, bin, or box might be. SAM 2.1 selects the visible pixels belonging to that proposal. Artifacts store the frame and visit, detector box and score, mask and score, overlay, model configuration, and optional audit status.
 
-The artifact stores:
+These outputs describe one frame. They do not establish a persistent object ID across visits. A missed detection is not evidence that the object is absent.
 
-- raw frame ID and visit;
-- detector box and score;
-- segmentation mask and score;
-- overlay image;
-- model names and configuration;
-- optional cached audit status.
+## 7. RGB-D evidence
 
-Neither model establishes persistent identity across visits. A prediction is evidence about one frame.
+ETH provides coloured point clouds and recorded transforms rather than a simple depth image plus camera intrinsics. The pipeline links visible mask pixels to compatible points and summarizes those points in a shared room frame.
 
-## 8. RGB-D evidence layer
-
-The ETH data provides coloured point clouds and recorded transforms rather than a simple depth image plus intrinsics. The pipeline links visible mask pixels to compatible points and summarizes the visible subset in a shared room frame.
-
-For visible points (P = \{p_i\}), the robust centroid is:
+For visible points `P = {p_i}`, the robust centroid is:
 
 ```math
 \bar p = \mathrm{median}_{p_i \in P}(p_i)
 ```
 
-The output also records point count and a robust spatial extent. This is partial visible geometry, not a complete object reconstruction. Different viewpoints can expose different surfaces even when the physical object has not changed.
+In plain English, this is the middle 3D location of the visible points. A median is less sensitive than a mean to a few noisy points. The artifact also records point count and a robust spatial extent. This is partial visible geometry, not a complete object model; different viewpoints can expose different surfaces without any physical change.
 
-## 9. Cross-visit association
+## 8. Cross-visit association
 
-Association ranks candidate detections from different logical visits. It combines appearance, shape, evidence quality, and approximate room-frame position:
+Association ranks detections from different logical visits. It combines appearance, shape, evidence quality, and approximate room-frame position:
 
 ```math
 S(a,b) = w_a A(a,b) + w_s S_{shape}(a,b) + w_g G(a,b) + w_e E(a,b)
 ```
 
-The current output is intentionally cautious:
+The score is a ranking aid. Current labels are `likely_same`, `possible_match`, and `uncertain`. A position difference may support a possible movement hypothesis, but it does not prove persistent identity or movement.
 
-- `likely_same`;
-- `possible_match`;
-- `uncertain`.
+## 9. Artifact and storage architecture
 
-A large position difference can support a possible movement hypothesis, but it does not prove that the two detections are the same physical object or that a person moved it.
-
-## 10. Artifact architecture
-
-| Artifact | Contents | Consumer |
+| Artifact | Contents | Main consumer |
 | --- | --- | --- |
 | Office manifest | frame IDs, visits, poses, source paths | preparation and evaluation |
 | Memory index | normalized embeddings and metadata | retrieval API |
-| Zone artifact | zone definitions and frame assignments | zone pages and evaluation |
-| Object localization | boxes, masks, overlays, scores | object page |
-| RGB-D evidence | visible points, centroids, extents | evidence page and association |
-| Association artifact | candidate pairs, scores, claim boundaries | compare-visits page |
-| VLM audit | cached structured judgments and provenance | failure analysis |
+| Zone artifact | zone definitions and frame assignments | application and research zone views |
+| Object localization | boxes, masks, overlays, scores | research object view |
+| RGB-D evidence | visible points, centroids, extents | research evidence and association views |
+| Association artifact | candidate pairs, scores, claim boundaries | research association view |
+| Inspection database | uploaded image path, question, selected evidence, comparison, summary, report | application history |
+| VLM analysis | cached structured summaries and provenance | inspection report and research review |
 
-JSONL records are streamable and inspectable. Large images, masks, and embeddings remain separate files. The API exposes only allow-listed artifact files.
+Large images, masks, and embeddings remain separate files. SQLite stores inspection metadata and structured report JSON; it is not the vector database and does not replace the offline image index.
 
-## 11. Domain API
+## 10. Domain API
 
 ```text
 GET  /api/health
@@ -199,60 +187,45 @@ GET  /api/evidence
 GET  /api/associations
 GET  /api/queries
 GET  /api/queries/{query_id}
+GET  /api/inspections
+GET  /api/inspections/{inspection_id}
+POST /api/inspections
+POST /api/inspections/with-image
+GET  /api/inspections/{inspection_id}/current-image
+POST /api/inspections/{inspection_id}/compare
+POST /api/inspection-summary/image
+POST /api/inspections/{inspection_id}/summary
+POST /api/inspections/{inspection_id}/report
 POST /api/analyze/text
 POST /api/analyze/image
 ```
 
-The API is read-only for ordinary browsing. Optional cloud analysis is a separate, explicit action and is disabled without an API key.
+Ordinary retrieval and artifact browsing are local. Cloud/VLM analysis is an explicit action and is unavailable without `OPENAI_API_KEY`. The API allow-lists artifact paths rather than exposing the filesystem.
 
-## 12. UI structure
+## 11. UI structure
 
 ```text
-Landing page (/) — choose a workspace
-├── Use Visual Memory workspace (/app)
+Landing page (/)
+├── Office assistant (/app)
 │   ├── Ask memory
-│   ├── Find objects
-│   ├── Compare visits
-│   └── Evidence
-└── System Insights workspace (/research)
+│   ├── Inspect current photo (/app/inspect)
+│   └── Saved inspection history (/app/inspections)
+└── Research workspace (/research)
     ├── Overview and evaluation
-    ├── Failures
-    ├── Zones
-    ├── Objects
-    ├── 3D evidence
-    └── Associations
+    ├── Failure browser
+    ├── Office zones
+    ├── Object boxes and masks
+    ├── RGB-D evidence
+    └── Cross-visit associations
 ```
 
-The primary technician navigation contains only Ask memory, Inspect, and
-History. The technician pages keep the question and evidence together. The
-research pages expose measurements and intermediate artifacts without making
-the technician navigate through them. The detailed routes for objects, visit
-comparison, evidence, and task checks remain available for focused review but
-are not shown as primary technician tabs.
+Detailed routes for focused object, comparison, evidence, and task review remain available where implemented, but they are not primary technician navigation. Evidence-bearing pages should show source frame/visit, image or crop, score/provenance, relevant pose or geometry, and a plain-language claim boundary.
 
-Each evidence-bearing page shows:
+## 12. Evaluation and failure boundaries
 
-- source frame and visit;
-- image, crop, box, or mask;
-- score and provenance;
-- pose or geometry summary;
-- a plain-language claim boundary.
+The research view measures pose coverage and hit@k, translation and rotation error, zone agreement, cross-traversal retrieval quality, detector and mask evidence, RGB-D point coverage, association uncertainty, and technician-question evidence recall.
 
-The UI should prefer “possible match” or “not enough evidence” over an unsupported definitive answer.
-
-## 13. Evaluation and failure boundaries
-
-The system measures:
-
-- pose coverage and hit@1/5/10;
-- translation and rotation error;
-- zone agreement;
-- cross-traversal retrieval quality;
-- detector and mask evidence;
-- RGB-D point coverage;
-- association score and uncertainty.
-
-The most important boundaries are:
+The central safety boundaries are:
 
 ```text
 similarity ≠ physical identity
@@ -260,25 +233,15 @@ not detected ≠ absent
 visible geometry ≠ complete object model
 candidate match ≠ verified movement
 sequence order ≠ calendar time
+uploaded photo ≠ dataset-labeled visit
 VLM review ≠ human ground truth
 ```
 
-## 14. Scaling path
+## 13. Current limits and future work
 
-The current system is a local modular monolith suitable for research iteration. If a real deployment required larger scale, the same stages could become:
+The current system is an offline local prototype. It does not yet provide persistent object identity, reliable true change detection under viewpoint and lighting changes, live video ingestion, or authenticated multi-user deployment. Future work should be driven by measured failures and controlled repeated-visit data.
 
-```text
-ingestion service
-→ asynchronous GPU jobs
-→ object storage and metadata database
-→ vector index with exact reranking
-→ evidence API
-→ authenticated technician UI
-```
-
-That expansion should follow measured workload and reliability needs. The current artifact boundary keeps the research system understandable.
-
-## 15. Design principles
+## 14. Design principles
 
 1. Retrieve evidence before generating prose.
 2. Keep expensive perception offline and reproducible.

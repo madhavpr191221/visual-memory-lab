@@ -1,99 +1,85 @@
 # Visual Memory Lab
 
-Visual Memory Lab is a research prototype for remembering and inspecting real office spaces.
+Visual Memory Lab is an evidence-first office inspection assistant. It helps a technician or facilities worker answer practical questions about a photographed office:
 
-It is built around a practical technician question:
+> Where was this workstation or object seen before, and what can I safely conclude from the available evidence?
 
-> “Where was this object or workstation seen during an earlier inspection, and what evidence supports the answer?”
+The system retrieves real office images, compares a current photo with earlier views, and produces a cautious report that separates observations from conclusions. It is designed for inspection support, not autonomous maintenance decisions.
 
-The system retrieves real RGB observations first, then adds camera pose, semantic place zones, object masks, recorded RGB-D geometry, and cautious cross-visit comparisons. It does not pretend that a detector prediction is a verified identity or that a missing prediction proves an object disappeared.
+## The technician workflow
 
-## Technician example
+Imagine a technician checking a workstation after a service call. They upload a photo and may ask about a desk, chair, cables, papers, or visible damage. The assistant:
 
-Imagine a facilities technician who photographs an office during several visits. Later, they want to know where a chair was seen, which desk was beside a window, or whether two views may show the same physical object.
+1. summarizes what is visible in the current photo;
+2. retrieves visually relevant earlier office views;
+3. lets the technician choose an earlier view to compare;
+4. shows the two images side by side;
+5. explains what is visible and what still needs a manual check;
+6. saves the inspection and its evidence locally for later review.
 
-The system can:
+The result is deliberately careful. A similar-looking chair is not automatically the same chair, and a missing detection is not proof that an object disappeared.
 
-- retrieve earlier views using text or an image;
-- show the source frame, visit, and camera metadata;
-- compare semantic office zones;
-- locate candidate chairs, bins, and boxes with Grounding DINO and SAM 2.1;
-- connect visible object masks to recorded ETH RGB-D point clouds;
-- rank possible cross-visit matches using appearance and approximate geometry;
-- show uncertainty and evidence boundaries next to every result.
+## What is implemented
 
-The system cannot currently prove persistent object identity, prove that an object moved, or infer calendar time from public sequence IDs.
+- CLIP ViT-B/32 image and text retrieval over real office frames;
+- pose-grounded retrieval evaluation and recurring office place zones;
+- Grounding DINO candidate boxes and SAM 2.1 visible-pixel masks;
+- recorded ETH RGB-D point-cloud evidence in a shared room frame;
+- cautious cross-visit association candidates using appearance and approximate geometry;
+- an Office assistant UI for asking questions, uploading photos, comparing views, and saving inspections;
+- a Research workspace for reviewing retrieval, perception, geometry, association, and failure measurements.
+
+## Two views of one system
+
+The landing page (`/`) offers two entry points over the same prepared artifacts and API:
+
+- **Office assistant** (`/app`): the user-facing workflow. Its primary pages are Ask memory, Inspect, and History.
+- **Research workspace** (`/research`): a secondary validation view for engineers and reviewers. It exposes evaluation, failures, zones, object masks, RGB-D evidence, and association candidates.
+
+The Research workspace is not a second product or separate pipeline. It makes the intermediate evidence and limitations visible so the application can be evaluated honestly.
 
 ## Current architecture
 
 ```text
-7-Scenes / ETH Office recordings
-            ↓
-validated manifests and deterministic keyframes
-            ↓
-offline pipelines
-  CLIP retrieval | place zones | object detection | masks | RGB-D | association
-            ↓
-versioned local artifacts
-            ↓
-FastAPI read-only API
-            ↓
-React/TypeScript evidence explorer
+Office RGB/RGB-D recordings + uploaded photo
+                    ↓
+Offline preparation and perception artifacts
+                    ↓
+Retrieval and evidence services
+                    ↓
+FastAPI domain API
+                    ↓
+Landing page (/)
+          ↙                         ↘
+Office assistant (/app)       Research workspace (/research)
+          ↓
+Inspection history and reports
 ```
 
-Expensive model work runs offline. The browser reads prepared artifacts instead of rerunning perception on every page load. This makes results reproducible, inspectable, and fast to browse.
+Expensive model work runs offline. The browser reads prepared artifacts rather than rerunning indexing, detection, segmentation, or RGB-D processing on every page load. An uploaded photo can be summarized and compared through explicit API actions when `OPENAI_API_KEY` is configured.
 
 The detailed design is in [System Design and Architecture](docs/system_design_and_architecture.md).
-
-## The landing page
-
-The root page (`/`) is a deliberate starting point, not another research
-dashboard. It asks what kind of work the visitor wants to do:
-
-- **Use Visual Memory** opens `/app`, the technician-facing workflow for asking
-  about an earlier office view, finding candidate objects, comparing visits,
-  and opening the supporting evidence.
-- **System Insights** opens `/research`, the engineering-facing workflow for
-  checking retrieval quality, zones, detector and mask outputs, 3D evidence,
-  associations, and known failure cases.
-
-Both views use the same prepared office artifacts and API. The difference is
-the question being answered: `/app` helps someone inspect an office, while
-`/research` helps someone understand how reliable the system is.
 
 ## Data and models
 
 ### 7-Scenes Office
 
-Used for real-image place memory. The dataset supplies RGB frames and camera poses. The project uses an official 6,000-memory / 4,000-query split, pose-grounded coverage, hit@k, and pose-error evaluation.
+Used for real-image place memory. It supplies RGB frames and camera poses. The project uses the official 6,000-memory / 4,000-query split for pose-grounded retrieval evaluation. Sequence order is not treated as calendar time.
 
 ### ETH Office
 
-Used for object-aware evidence. The recordings contain RGB images, coloured point clouds, and recorded transforms. The project uses four logical office visits and does not redistribute the dataset.
+Used for object-aware evidence. The recordings contain RGB images, coloured point clouds, and recorded transforms for four logical office visits. The dataset is referenced locally and is not redistributed.
 
 ### Models
 
 - CLIP ViT-B/32: frozen image/text representation for exact retrieval;
 - Grounding DINO: text-guided candidate object boxes;
 - SAM 2.1: pixel masks for candidate boxes;
-- optional VLM review: bounded pseudo-audit for selected evidence, never human ground truth.
-
-## Active research phases
-
-1. **Office place memory:** retrieve relevant real office views and evaluate them against camera pose.
-2. **Office explorer:** inspect images, zones, evaluations, and failure cases in a local UI.
-3. **Cross-traversal memory:** measure retrieval across designated office traversals.
-4. **Object localization:** produce inspectable boxes and masks for chairs, bins, and boxes.
-5. **RGB-D object evidence:** summarize visible object geometry in the recorded room frame.
-6. **Cross-visit association:** rank cautious candidate matches across visits.
-7. **Technician task benchmark:** evaluate manually authored office questions with evidence and safe-abstention labels.
-8. **Office inspection assistant:** ask a question, review evidence, optionally compare an earlier view, and save a local inspection record.
-
-The detailed phase documents are listed in the [docs/phases](docs/phases) directory.
+- optional VLM analysis: bounded summaries and reports for selected evidence, never human ground truth.
 
 ## Public API
 
-The API uses domain-oriented routes rather than phase-numbered routes:
+Core retrieval and evidence routes:
 
 ```text
 GET  /api/health
@@ -105,18 +91,25 @@ POST /api/search/image
 GET  /api/zones
 GET  /api/zones/{slug}
 GET  /api/objects
-GET  /api/objects/images/{image_id}
 GET  /api/evidence
 GET  /api/associations
 ```
 
-The ordinary retrieval path is local. Cloud analysis is a separate, explicit action and is unavailable unless `OPENAI_API_KEY` is configured.
+Technician inspection routes:
 
-Technician retrieval searches a wider candidate pool and suppresses nearby duplicate
-frames when other relevant traversals are available. The first result remains the
-strongest visual match; later cards are labelled as another traversal or related
-office view. Images in `data/phase8/upload-examples` are split into known-frame
-examples and held-out sequence examples for honest demonstrations.
+```text
+GET  /api/inspections
+GET  /api/inspections/{inspection_id}
+POST /api/inspections
+POST /api/inspections/with-image
+GET  /api/inspections/{inspection_id}/current-image
+POST /api/inspections/{inspection_id}/compare
+POST /api/inspection-summary/image
+POST /api/inspections/{inspection_id}/summary
+POST /api/inspections/{inspection_id}/report
+```
+
+Ordinary retrieval is local. Cloud/VLM analysis is a separate explicit action and requires `OPENAI_API_KEY`. Saved inspection records and reports use local SQLite; uploaded images are kept in the configured local output directory.
 
 ## Run the office UI
 
@@ -136,28 +129,20 @@ Open `http://127.0.0.1:8000`.
 Useful pages:
 
 ```text
-/                 Landing page: choose a workflow
+/                 Landing page
 /app              Office assistant: ask memory
-/app/inspect      Office assistant: inspect a current photo
-/app/inspections  Office assistant: saved history
+/app/inspect      Upload a current photo and compare it with earlier views
+/app/inspections Saved inspection history
 /research         Research overview
-/research/evaluation       Retrieval evaluation
-/research/failures         Failure browser
-/research/zones             Office place zones
-/research/objects           Detector and mask outputs
-/research/evidence          RGB-D evidence
-/research/associations      Cross-visit candidates
+/research/evaluation
+/research/failures
+/research/zones
+/research/objects
+/research/evidence
+/research/associations
 ```
 
-The application navigation intentionally stays small: Ask memory, Inspect, and
-History. The detailed routes `/app/objects`, `/app/compare`, `/app/evidence`,
-and `/app/tasks` remain available for focused review but are not primary tabs.
-
-The inspection workflow can summarize an uploaded current photo, compare it
-with a selected earlier memory, and produce a cautious technician report with
-visible conditions, evidence citations, limitations, and a recommended manual
-check. The summary and report require `OPENAI_API_KEY`; local retrieval and
-side-by-side evidence remain available without it.
+The application navigation intentionally stays small. Detailed research routes remain available for focused review but are not primary technician tabs.
 
 ## Build the real-image artifacts
 
@@ -173,7 +158,7 @@ uv run visual-memory-lab index `
   --output outputs/phase3/train-index
 ```
 
-The complete place-memory, zone, and evaluation commands are documented in [Phase 3/4](docs/phases/03_04_real_office_visual_memory_system.md).
+The complete preparation and evaluation commands are documented in [Phase 3/4](docs/phases/03_04_real_office_visual_memory_system.md).
 
 Run object localization on an NVIDIA GPU:
 
@@ -195,17 +180,7 @@ uv run visual-memory-lab build-eth-rgbd-evidence `
   --output outputs/phase612/rgbd-evidence
 ```
 
-## Evaluation and limitations
-
-The project reports:
-
-- pose coverage and pose-grounded hit@1/5/10;
-- translation and rotation error;
-- zone retrieval agreement;
-- cross-traversal coverage and retrieval quality;
-- detector, mask, geometry, and association evidence.
-
-Important boundaries:
+## Evidence boundaries
 
 - a high CLIP score means visual similarity, not physical identity;
 - a detection is a category prediction, not a persistent object ID;
@@ -213,15 +188,18 @@ Important boundaries:
 - recorded point clouds describe visible geometry, not a complete object model;
 - a cross-visit candidate is a possible match, not a verified move;
 - sequence order is a logical visit order, not a calendar timestamp;
-- VLM judgments are cached pseudo-audits, not human labels.
+- an uploaded photo has no dataset zone or visit metadata unless supplied separately;
+- VLM summaries and reports are supporting analysis, not human labels.
 
-## Tests
+## Evaluation and tests
+
+The research workspace reports pose coverage, hit@k, translation and rotation error, zone agreement, detector and mask evidence, RGB-D point coverage, association uncertainty, and technician-question evidence recall.
 
 ```powershell
 uv run python -m pytest -q
 ```
 
-If the local `uv` cache is unavailable, the repository’s Python 3.13 environment can be used directly:
+If the local `uv` cache is unavailable:
 
 ```powershell
 .\.venv-gpu\Scripts\python.exe -m pytest -q tests --basetemp .tmp-pytest\run
@@ -229,20 +207,16 @@ If the local `uv` cache is unavailable, the repository’s Python 3.13 environme
 
 ## Citations and licensing
 
-The project uses public research datasets and published models. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and the citations at the end of this README for dataset and model sources. The 7-Scenes dataset is restricted to non-commercial use; the dataset, embeddings, and model weights are not redistributed.
+See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). The 7-Scenes dataset is restricted to non-commercial use; the dataset, embeddings, and model weights are not redistributed.
 
 Key sources:
 
-- Shotton et al., “Scene Coordinate Regression Forests for Camera Relocalization in RGB-D Images,” CVPR 2013. [Microsoft Research](https://www.microsoft.com/en-us/research/publication/scene-coordinate-regression-forests-for-camera-relocalization-in-rgb-d-images-2/)
-- Radford et al., “Learning Transferable Visual Models From Natural Language Supervision,” ICML 2021. [Paper](https://proceedings.mlr.press/v139/radford21a.html)
-- Fehr et al., “TSDF-based Change Detection for Consistent Long-Term Dense Reconstruction and Dynamic Object Discovery,” ICRA 2017. [Paper](https://cesarcadena.ethz.ch/files/ICRA2017_mfehr.pdf)
-- Liu et al., “Grounding DINO: Marrying DINO with Grounded Pre-Training for Open-Set Object Detection,” ECCV 2024. [Paper](https://arxiv.org/abs/2303.05499)
-- Ravi et al., “SAM 2: Segment Anything in Images and Videos,” 2024. [Paper](https://arxiv.org/abs/2408.00714)
+- Shotton et al., “Scene Coordinate Regression Forests for Camera Relocalization in RGB-D Images,” [Microsoft Research](https://www.microsoft.com/en-us/research/publication/scene-coordinate-regression-forests-for-camera-relocalization-in-rgb-d-images-2/)
+- Radford et al., “Learning Transferable Visual Models From Natural Language Supervision,” [ICML 2021](https://proceedings.mlr.press/v139/radford21a.html)
+- Fehr et al., “TSDF-based Change Detection for Consistent Long-Term Dense Reconstruction and Dynamic Object Discovery,” [ICRA 2017](https://cesarcadena.ethz.ch/files/ICRA2017_mfehr.pdf)
+- Liu et al., “Grounding DINO: Marrying DINO with Grounded Pre-Training for Open-Set Object Detection,” [ECCV 2024](https://arxiv.org/abs/2303.05499)
+- Ravi et al., “SAM 2: Segment Anything in Images and Videos,” [2024](https://arxiv.org/abs/2408.00714)
 
-## Project direction
+## Current limitations and next steps
 
-The long-term question is:
-
-> “What was this office area like during the previous visit, and what evidence supports any difference?”
-
-The next research steps should improve coverage, persistent object identity, temporal metadata, calibrated abstention, and evaluation on controlled repeated real-world visits.
+The current system is an offline, local prototype. It does not yet provide persistent object identity, reliable true change detection under viewpoint and lighting changes, live video ingestion, or authenticated multi-user deployment. Future work should be driven by measured failures and controlled repeated-visit data rather than adding complexity for its own sake.
