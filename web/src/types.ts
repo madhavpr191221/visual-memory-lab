@@ -12,6 +12,29 @@ export interface Capabilities {
   unsupported_claims: string[];
 }
 
+export interface VideoMemoryWindow {
+  window_id: string;
+  video_id: string;
+  video_path: string;
+  video_url?: string;
+  split: string;
+  start_s: number;
+  end_s: number;
+  score?: number;
+  retrieval_mode?: string;
+  actions: { action_id: string; name: string; start_s: number; end_s: number }[];
+  objects: string[];
+  description: string;
+}
+
+export interface VideoMemoryResponse {
+  dataset: string;
+  window_count: number;
+  query: string;
+  retrieval_mode: string;
+  results: VideoMemoryWindow[];
+}
+
 export interface ZoneSummary {
   slug: string;
   name: string;

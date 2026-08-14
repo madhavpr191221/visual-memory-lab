@@ -42,6 +42,7 @@ from visual_memory_lab.ui_service import (
 from visual_memory_lab.vlm_analysis import EvidenceAnalyzer
 from visual_memory_lab.inspection_store import InspectionStore
 from visual_memory_lab.technician_benchmark import load_questions
+from visual_memory_lab.charades import load_manifest, search_windows
 
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 ALLOWED_IMAGE_TYPES = {"image/png", "image/jpeg"}
@@ -66,6 +67,7 @@ class AppConfig:
     inspection_db: Path = Path("outputs/phase8/inspections.sqlite3")
     technician_questions: Path = Path("data/phase7/technician_questions.jsonl")
     technician_output: Path = Path("outputs/phase7/technician-benchmark")
+    charades_windows: Path = Path("outputs/charades/windows/windows.jsonl")
 
 
 @dataclass
@@ -78,6 +80,7 @@ class AppResources:
     rgbd: RgbdShowcase | None = None
     associations: AssociationShowcase | None = None
     inspections: InspectionStore | None = None
+    charades_windows: list[dict[str, object]] | None = None
 
 
 def load_resources(config: AppConfig) -> AppResources:
@@ -126,6 +129,9 @@ def load_resources(config: AppConfig) -> AppResources:
         )
     except FileNotFoundError:
         pass
+    charades_windows = None
+    if config.charades_windows.is_file():
+        charades_windows = load_manifest(config.charades_windows)
     return AppResources(
         service=service,
         memory=memory,
@@ -135,6 +141,7 @@ def load_resources(config: AppConfig) -> AppResources:
         rgbd=rgbd,
         associations=associations,
         inspections=InspectionStore(config.inspection_db),
+        charades_windows=charades_windows,
     )
 
 
@@ -197,6 +204,38 @@ def create_app(
             "model_id": current().memory.model_id,
             "model_revision": current().memory.model_revision,
         }
+
+    @app.get("/api/video-memory")
+    def video_memory(
+        q: str = Query(default=""),
+        top_k: int = Query(default=8, ge=1, le=24),
+    ) -> dict[str, object]:
+        windows = current().charades_windows
+        if windows is None:
+            raise HTTPException(status_code=404, detail="Charades temporal memory is not prepared")
+        results = search_windows(windows, q, top_k=top_k) if q.strip() else []
+        for result in results:
+            result["video_url"] = f"/api/video-memory/videos/{result['video_id']}"
+        return {
+            "dataset": "charades",
+            "window_count": len(windows),
+            "query": q,
+            "retrieval_mode": "annotation_lexical_baseline",
+            "results": results,
+        }
+
+    @app.get("/api/video-memory/videos/{video_id}")
+    def video_memory_file(video_id: str) -> FileResponse:
+        windows = current().charades_windows
+        if windows is None:
+            raise HTTPException(status_code=404, detail="Charades temporal memory is not prepared")
+        matches = [item for item in windows if str(item.get("video_id")) == video_id]
+        if not matches:
+            raise HTTPException(status_code=404, detail="video not found")
+        path = Path(str(matches[0].get("video_path", ""))).resolve()
+        if path.suffix.lower() != ".mp4" or not path.is_file():
+            raise HTTPException(status_code=404, detail="video file is unavailable")
+        return FileResponse(path, media_type="video/mp4", filename=path.name)
 
     @app.get("/api/guided-demo")
     def guided_demo() -> dict[str, object]:

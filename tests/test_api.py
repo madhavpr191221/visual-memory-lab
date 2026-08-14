@@ -63,6 +63,32 @@ def test_guided_demo_returns_evidence_backed_case(tmp_path: Path) -> None:
         assert payload["limitations"]
 
 
+def test_video_memory_search_returns_timestamped_windows(tmp_path: Path) -> None:
+    service = make_service(tmp_path)
+    resources = AppResources(
+        service=service,
+        memory=service.memory,
+        queries=service.queries,
+        charades_windows=[
+            {
+                "window_id": "ABC12:0-4",
+                "video_id": "ABC12",
+                "video_path": str(tmp_path / "ABC12.mp4"),
+                "split": "train",
+                "start_s": 0.0,
+                "end_s": 4.0,
+                "actions": [{"action_id": "c008", "name": "Opening a door", "start_s": 1.0, "end_s": 2.0}],
+                "objects": ["door"],
+                "description": "A person opens a door.",
+            }
+        ],
+    )
+    with TestClient(create_app(AppConfig(web_dist=tmp_path / "missing"), resources=resources)) as client:
+        response = client.get("/api/video-memory", params={"q": "open door"})
+        assert response.status_code == 200
+        assert response.json()["results"][0]["video_url"].endswith("/ABC12")
+
+
 def test_image_search_validation_and_allowlisted_serving(tmp_path: Path) -> None:
     with _client(tmp_path) as client:
         response = client.post(

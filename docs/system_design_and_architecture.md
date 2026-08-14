@@ -17,6 +17,7 @@ Retrieval finds candidate images. Perception identifies visible regions. Associa
 ```mermaid
 flowchart LR
     D[Office RGB/RGB-D recordings]
+    V[Charades RGB videos + action intervals]
     U[Uploaded current photo]
     P[Offline preparation and perception]
     A[Versioned local artifacts]
@@ -24,6 +25,7 @@ flowchart LR
     API[Domain API]
     L[Landing page /]
     APP[Office assistant /app]
+    VM[Video memory /app/video]
     R[Research workspace /research]
     H[SQLite inspection history]
     T[Technician]
@@ -31,9 +33,11 @@ flowchart LR
     V[Optional VLM analysis]
 
     D --> P --> A --> F --> API
+    V --> P
     U --> API
     API --> L
     L --> APP --> T
+    APP --> VM
     L --> R --> E
     APP --> H
     API -. explicit selected-evidence action .-> V
@@ -81,6 +85,13 @@ An uploaded photo is not automatically assigned a dataset sequence, visit, camer
 
 The ETH Office recording supplies RGB images, coloured point clouds, and recorded transforms for four logical office visits. It supports object localization, visible 3D evidence, and cautious cross-visit comparison. The data is referenced locally and is not redistributed.
 
+### Charades
+
+Charades supplies RGB videos with action intervals, object labels, and natural-
+language descriptions. It supports temporal memory questions such as “when
+did the person open the door?” It does not supply metric depth or camera poses,
+so it is not used for 3D measurement.
+
 ### Offline pipeline
 
 ```mermaid
@@ -94,6 +105,7 @@ flowchart TD
     G[RGB-D visible geometry]
     X[Cross-visit candidate scores]
     J[Optional cached VLM review]
+    W[Timestamped Charades windows]
 
     R --> M --> K
     K --> C
@@ -103,6 +115,8 @@ flowchart TD
     O --> X
     G --> X
     X --> J
+    V[Charades annotations and videos] --> W
+    W --> C
 ```
 
 Each run records its input, configuration, model identifiers, and output paths. Images, masks, embeddings, JSONL records, and summaries remain separate so a reviewer can inspect source evidence without loading every artifact into memory.
@@ -187,6 +201,8 @@ GET  /api/objects
 GET  /api/objects/images/{image_id}
 GET  /api/evidence
 GET  /api/associations
+GET  /api/video-memory
+GET  /api/video-memory/videos/{video_id}
 GET  /api/queries
 GET  /api/queries/{query_id}
 GET  /api/inspections

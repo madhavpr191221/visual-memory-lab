@@ -12,6 +12,7 @@ import { InspectionDetailPage, InspectionPage, InspectionsPage } from "./pages/I
 import { RgbdEvidencePage } from "./pages/RgbdEvidencePage";
 import { ZoneDetailPage } from "./pages/ZoneDetailPage";
 import { ZonesPage } from "./pages/ZonesPage";
+import { VideoMemoryPage } from "./pages/VideoMemoryPage";
 import styles from "./App.module.css";
 
 function Header() {
@@ -36,6 +37,7 @@ function Header() {
         </> : <>
           <NavLink to="/app" end>Ask memory</NavLink>
           <NavLink to="/app/inspect">Inspect</NavLink>
+          <NavLink to="/app/video">Video memory</NavLink>
           <NavLink to="/app/inspections">History</NavLink>
           <NavLink to="/research" className={styles.workspaceLink}>Research</NavLink>
         </>}
@@ -59,6 +61,7 @@ export default function App() {
       <Route path="app/compare" element={<AssociationPage />} />
       <Route path="app/tasks" element={<TechnicianTasksPage />} />
       <Route path="app/inspect" element={<InspectionPage />} />
+      <Route path="app/video" element={<VideoMemoryPage />} />
       <Route path="app/inspections" element={<InspectionsPage />} />
       <Route path="app/inspections/:id" element={<InspectionDetailPage id={window.location.pathname.split("/").pop() ?? ""} />} />
       <Route path="research" element={<EvaluationPage />} />

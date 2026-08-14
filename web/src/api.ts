@@ -13,6 +13,7 @@ import type {
   Phase6b1Showcase,
   Phase612Showcase,
   Phase613Showcase,
+  VideoMemoryResponse,
 } from "./types";
 
 export class ApiError extends Error {
@@ -41,6 +42,7 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
 
 export const api = {
   guidedDemo: () => request<GuidedDemo>("/api/guided-demo"),
+  videoMemory: (query: string) => request<VideoMemoryResponse>(`/api/video-memory?q=${encodeURIComponent(query)}`),
   capabilities: () => request<Capabilities>("/api/capabilities"),
   searchText: (question: string, displayK: 3 | 5 | 10) =>
     request<SearchResponse>("/api/search/text", {

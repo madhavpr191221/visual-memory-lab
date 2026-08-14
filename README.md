@@ -27,6 +27,7 @@ The result is deliberately careful. A similar-looking chair is not automatically
 - recorded ETH RGB-D point-cloud evidence in a shared room frame;
 - cautious cross-visit association candidates using appearance and approximate geometry;
 - an Office assistant UI for asking questions, uploading photos, comparing views, and saving inspections;
+- a Charades Video memory page for retrieving timestamped action windows;
 - a Research workspace for reviewing retrieval, perception, geometry, association, and failure measurements.
 
 ## Two views of one system
@@ -145,6 +146,7 @@ Useful pages:
 /app              Office assistant: ask memory
 /app/inspect      Upload a current photo and compare it with earlier views
 /app/inspections Saved inspection history
+/app/video         Charades video memory: find an action or object moment
 /research         Research overview
 /research/evaluation
 /research/failures
@@ -155,6 +157,27 @@ Useful pages:
 ```
 
 The application navigation intentionally stays small. Detailed research routes remain available for focused review but are not primary technician tabs.
+
+## Charades video memory
+
+The downloaded Charades copy is kept locally under `data/Charades_v1_480`. It
+contains the videos plus the official annotation and license files. Prepare a
+small reproducible subset and timestamped windows with:
+
+```powershell
+uv run visual-memory-lab prepare-charades `
+  --input data/Charades_v1_480 `
+  --output outputs/charades/subset
+
+uv run visual-memory-lab build-charades-windows `
+  --manifest outputs/charades/subset/manifest.jsonl `
+  --output outputs/charades/windows
+```
+
+Then start the UI as usual and open `/app/video`. The first retrieval method is
+an explicit annotation-text baseline. The next model stage will replace it
+with frozen CLIP frame embeddings, a trainable temporal head, and eventually
+ordinary gradient-based CLIP fine-tuning. See [Phase 9 — Charades video memory](docs/phases/09_charades_video_memory.md).
 
 ## Build the real-image artifacts
 

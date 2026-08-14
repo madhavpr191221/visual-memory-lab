@@ -71,6 +71,25 @@ def build_parser() -> argparse.ArgumentParser:
     prepare.add_argument("--input", type=Path, required=True)
     prepare.add_argument("--output", type=Path, required=True)
 
+    charades = subparsers.add_parser(
+        "prepare-charades",
+        help="write a deterministic Charades train/test subset manifest",
+    )
+    charades.add_argument("--input", type=Path, required=True)
+    charades.add_argument("--output", type=Path, required=True)
+    charades.add_argument("--train-limit", type=_positive_integer, default=300)
+    charades.add_argument("--test-limit", type=_positive_integer, default=100)
+    charades.add_argument("--seed", type=_non_negative_integer, default=42)
+
+    windows = subparsers.add_parser(
+        "build-charades-windows",
+        help="turn a Charades manifest into timestamped temporal windows",
+    )
+    windows.add_argument("--manifest", type=Path, required=True)
+    windows.add_argument("--output", type=Path, required=True)
+    windows.add_argument("--window-seconds", type=_positive_float, default=4.0)
+    windows.add_argument("--stride-seconds", type=_positive_float, default=2.0)
+
     zones = subparsers.add_parser(
         "label-zones",
         help="curate cached VLM-assisted place zones from a training manifest",
@@ -241,6 +260,11 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         default=Path("outputs/phase7/technician-benchmark"),
     )
+    serve.add_argument(
+        "--charades-windows",
+        type=Path,
+        default=Path("outputs/charades/windows/windows.jsonl"),
+    )
     serve.add_argument("--inspection-db", type=Path, default=Path("outputs/phase8/inspections.sqlite3"))
     serve.add_argument("--device", default="auto")
     serve.add_argument("--host", default="127.0.0.1")
@@ -381,6 +405,39 @@ def main(argv: Sequence[str] | None = None) -> int:
             f"Prepared {summary.train_count} train and {summary.test_count} test "
             f"RGB observations in {summary.output}; depth was not used"
         )
+    elif args.command == "prepare-charades":
+        from visual_memory_lab.charades import prepare_charades_dataset
+
+        try:
+            summary = prepare_charades_dataset(
+                dataset_root=args.input,
+                output=args.output,
+                train_limit=args.train_limit,
+                test_limit=args.test_limit,
+                seed=args.seed,
+            )
+        except (FileExistsError, OSError, ValueError) as error:
+            parser.error(str(error))
+        print(
+            f"Prepared {summary['train_count']} train and {summary['test_count']} "
+            f"test Charades videos in {args.output.resolve()}"
+        )
+    elif args.command == "build-charades-windows":
+        from visual_memory_lab.charades import build_temporal_windows
+
+        try:
+            summary = build_temporal_windows(
+                manifest=args.manifest,
+                output=args.output,
+                window_s=args.window_seconds,
+                stride_s=args.stride_seconds,
+            )
+        except (FileExistsError, OSError, ValueError) as error:
+            parser.error(str(error))
+        print(
+            f"Built {summary['window_count']} Charades temporal windows in "
+            f"{args.output.resolve()}"
+        )
     elif args.command == "label-zones":
         from visual_memory_lab.zone_labeling import label_zones
 
@@ -442,6 +499,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 technician_questions=args.technician_questions,
                 technician_output=args.technician_output,
                 inspection_db=args.inspection_db,
+                charades_windows=args.charades_windows,
             )
         )
         uvicorn.run(app, host=args.host, port=args.port)

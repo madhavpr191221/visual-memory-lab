@@ -31,6 +31,7 @@
 .evidenceGrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 16px; }
 .evidenceCard { overflow: hidden; position: relative; }
 .evidenceCard img { display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: cover; background: var(--surface-2); }
+.evidenceCard video { display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: contain; background: #171714; }
 .evidenceBody { padding: 15px; }
 .evidenceTop { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 8px; }
 .rank { color: var(--blue); font-weight: 800; }
