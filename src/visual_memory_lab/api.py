@@ -43,6 +43,7 @@ from visual_memory_lab.vlm_analysis import EvidenceAnalyzer
 from visual_memory_lab.inspection_store import InspectionStore
 from visual_memory_lab.technician_benchmark import load_questions
 from visual_memory_lab.charades import load_manifest, search_windows
+from visual_memory_lab.learned_video import LearnedVideoIndex, LearnedVideoRetriever
 
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 ALLOWED_IMAGE_TYPES = {"image/png", "image/jpeg"}
@@ -68,6 +69,7 @@ class AppConfig:
     technician_questions: Path = Path("data/phase7/technician_questions.jsonl")
     technician_output: Path = Path("outputs/phase7/technician-benchmark")
     charades_windows: Path = Path("outputs/charades/windows/windows.jsonl")
+    charades_learned_index: Path = Path("outputs/charades/learned/index")
 
 
 @dataclass
@@ -81,6 +83,7 @@ class AppResources:
     associations: AssociationShowcase | None = None
     inspections: InspectionStore | None = None
     charades_windows: list[dict[str, object]] | None = None
+    charades_video: LearnedVideoRetriever | None = None
 
 
 def load_resources(config: AppConfig) -> AppResources:
@@ -132,6 +135,15 @@ def load_resources(config: AppConfig) -> AppResources:
     charades_windows = None
     if config.charades_windows.is_file():
         charades_windows = load_manifest(config.charades_windows)
+    charades_video = None
+    try:
+        if (config.charades_learned_index / "metadata.json").is_file():
+            charades_video = LearnedVideoRetriever(
+                LearnedVideoIndex.load(config.charades_learned_index),
+                device=config.device,
+            )
+    except (FileNotFoundError, OSError, RuntimeError, ValueError):
+        charades_video = None
     return AppResources(
         service=service,
         memory=memory,
@@ -142,6 +154,7 @@ def load_resources(config: AppConfig) -> AppResources:
         associations=associations,
         inspections=InspectionStore(config.inspection_db),
         charades_windows=charades_windows,
+        charades_video=charades_video,
     )
 
 
@@ -213,14 +226,25 @@ def create_app(
         windows = current().charades_windows
         if windows is None:
             raise HTTPException(status_code=404, detail="Charades temporal memory is not prepared")
-        results = search_windows(windows, q, top_k=top_k) if q.strip() else []
+        if q.strip() and current().charades_video is not None:
+            results = current().charades_video.search(q, top_k=top_k)
+            retrieval_mode = "learned_temporal_clip"
+        else:
+            results = search_windows(windows, q, top_k=top_k) if q.strip() else []
+            retrieval_mode = "annotation_lexical_baseline"
         for result in results:
             result["video_url"] = f"/api/video-memory/videos/{result['video_id']}"
         return {
             "dataset": "charades",
             "window_count": len(windows),
+            "catalog_window_count": len(windows),
+            "indexed_window_count": (
+                len(current().charades_video.index.records)
+                if current().charades_video is not None
+                else 0
+            ),
             "query": q,
-            "retrieval_mode": "annotation_lexical_baseline",
+            "retrieval_mode": retrieval_mode,
             "results": results,
         }
 

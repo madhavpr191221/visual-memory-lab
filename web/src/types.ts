@@ -30,6 +30,8 @@ export interface VideoMemoryWindow {
 export interface VideoMemoryResponse {
   dataset: string;
   window_count: number;
+  catalog_window_count: number;
+  indexed_window_count: number;
   query: string;
   retrieval_mode: string;
   results: VideoMemoryWindow[];

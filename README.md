@@ -175,9 +175,46 @@ uv run visual-memory-lab build-charades-windows `
 ```
 
 Then start the UI as usual and open `/app/video`. The first retrieval method is
-an explicit annotation-text baseline. The next model stage will replace it
-with frozen CLIP frame embeddings, a trainable temporal head, and eventually
-ordinary gradient-based CLIP fine-tuning. See [Phase 9 — Charades video memory](docs/phases/09_charades_video_memory.md).
+an explicit annotation-text baseline. The learned pipeline below adds frozen
+CLIP frame/text embeddings and a trainable temporal head. See [Phase 9 —
+Charades video memory](docs/phases/09_charades_video_memory.md).
+
+### Learned video artifacts (Phase 10)
+
+Phase 10 adds deterministic eight-frame records, cached CLIP frame/text
+features, a trainable temporal head, an exact learned window index, and API
+fallback behaviour. Prepare the first learned artifacts with:
+
+```powershell
+uv run visual-memory-lab prepare-charades --input data/Charades_v1_480 --output outputs/charades/learned --train-limit 1000 --test-limit 300
+uv run visual-memory-lab build-charades-windows --manifest outputs/charades/learned/manifest.jsonl --output outputs/charades/learned/windows
+uv run visual-memory-lab build-charades-frames --manifest outputs/charades/learned/windows/windows.jsonl --output outputs/charades/learned/frames
+# First validate the pipeline on 100 videos. PyAV decodes on the CPU; CLIP uses CUDA when available.
+uv run --extra cuda visual-memory-lab build-charades-video-cache --manifest outputs/charades/learned/frames/frames.jsonl --output outputs/charades/learned/pilot/cache --device auto --max-videos 100 --workers 4 --batch-size 16
+uv run --extra cuda visual-memory-lab build-charades-video-cache --manifest outputs/charades/learned/frames/frames.jsonl --output outputs/charades/learned/pilot/cache --device auto --max-videos 100 --workers 4 --batch-size 16 --resume
+uv run --extra cuda visual-memory-lab train-charades-video --cache outputs/charades/learned/pilot/cache --output outputs/charades/learned/pilot/training --device auto
+uv run --extra cuda visual-memory-lab index-charades-video --cache outputs/charades/learned/pilot/cache --checkpoint outputs/charades/learned/pilot/training/temporal_head.pt --output outputs/charades/learned/pilot/index --device auto
+uv run --extra cuda visual-memory-lab evaluate-charades-video --index outputs/charades/learned/pilot/index --test-manifest outputs/charades/learned/frames/frames.jsonl --output outputs/charades/learned/pilot/evaluation --device auto
+
+# The full learned run contains 18,994 windows from 1,300 videos. Keep it
+# separate from the pilot so the two experiments remain comparable.
+uv run --extra cuda visual-memory-lab build-charades-video-cache --manifest outputs/charades/learned/frames/frames.jsonl --output outputs/charades/learned/full/cache --device auto --workers 4 --batch-size 16
+uv run --extra cuda visual-memory-lab train-charades-video --cache outputs/charades/learned/full/cache --output outputs/charades/learned/full/training --device auto --split train
+uv run --extra cuda visual-memory-lab index-charades-video --cache outputs/charades/learned/full/cache --checkpoint outputs/charades/learned/full/training/temporal_head.pt --output outputs/charades/learned/full/index --device auto --split train
+uv run --extra cuda visual-memory-lab evaluate-charades-video --index outputs/charades/learned/full/index --test-manifest outputs/charades/learned/frames/frames.jsonl --output outputs/charades/learned/full/evaluation --device auto
+```
+
+The earlier annotation baseline contains 5,883 windows from the smaller
+300-train/100-test preparation. The learned manifest contains 18,994 windows
+from 1,000 train and 300 test videos. The Video memory page uses the learned
+index when it exists and labels the annotation search as the fallback. This phase retrieves temporal windows; it
+does not yet claim precise frame boundaries, audio understanding, depth, or 3D
+reasoning. See [Phase 10 — learned video memory architecture](docs/phases/10_learned_video_memory_architecture.md).
+
+The full training-only index contains 14,824 windows. On 4,170 held-out test
+queries, the current full run reached Recall@1 0.6360, Recall@5 0.8746, and
+Recall@10 0.9173. Temporal IoU remains lower (mean 0.258), which means the
+system often finds the right activity but not its exact boundary.
 
 ## Build the real-image artifacts
 

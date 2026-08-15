@@ -29,11 +29,11 @@ export function VideoMemoryPage() {
         <div>
           <p className="eyebrow">Video memory</p>
           <h1>Find the moment, not just the video.</h1>
-          <p>Ask when an action happened or when an object appeared. Each result is a short time window with the annotation and video evidence beside it.</p>
+          <p>Ask when an action happened or when an object appeared. Each result is a short time window with playable video evidence beside it.</p>
         </div>
         <aside className={styles.heroNote}>
           <strong>Charades temporal memory</strong>
-          <p>The first slice uses official action intervals as a transparent baseline. Learned CLIP and temporal retrieval will replace this baseline after the workflow is validated.</p>
+          <p>Results are learned visual-temporal matches when the trained index is available, with the annotation search retained as a transparent fallback.</p>
         </aside>
       </section>
       <form className={`panel ${styles.searchPanel}`} onSubmit={search}>
@@ -51,8 +51,8 @@ export function VideoMemoryPage() {
       {result && (
         <section className={styles.results} aria-live="polite">
           <div className={`panel ${styles.answerStrip}`}>
-            <div><span className="status strong">candidate moments</span><h2>{result.results.length} candidate moments</h2><p>{result.window_count} timestamped windows are available in the prepared Charades subset.</p></div>
-            <div className={styles.timeNotice}>Baseline: annotation matching; review the video evidence.</div>
+            <div><span className="status strong">{result.retrieval_mode === "learned_temporal_clip" ? "learned video retrieval" : "annotation baseline"}</span><h2>{result.results.length} candidate moments</h2><p>{result.catalog_window_count} prepared windows; {result.retrieval_mode === "learned_temporal_clip" ? `${result.indexed_window_count} training windows indexed.` : "lexical annotation search is active."}</p></div>
+            <div className={styles.timeNotice}>{result.retrieval_mode === "learned_temporal_clip" ? "CLIP frame features and a temporal head ranked these windows." : "Annotation matching ranked these windows; review the video evidence."}</div>
           </div>
           <div className={styles.evidenceGrid}>
             {result.results.map((item) => (

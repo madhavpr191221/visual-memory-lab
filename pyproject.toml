@@ -9,6 +9,7 @@ dependencies = [
     "matplotlib>=3.11.1",
     "numpy>=2.5.2",
     "openai>=2,<3",
+    "av>=14,<17",
     "pillow>=12.3.0,<13",
     "plyfile>=1.1.5",
     "pydantic>=2,<3",
