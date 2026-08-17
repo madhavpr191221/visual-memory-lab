@@ -28,6 +28,9 @@ from visual_memory_lab.api_models import (
     InspectionCreateRequest,
     InspectionReportRequest,
     InspectionSummaryRequest,
+    VideoFollowUpRequest,
+    VideoFindingCreateRequest,
+    VideoSummaryRequest,
     SearchResponse,
     TextSearchRequest,
 )
@@ -44,6 +47,7 @@ from visual_memory_lab.inspection_store import InspectionStore
 from visual_memory_lab.technician_benchmark import load_questions
 from visual_memory_lab.charades import load_manifest, search_windows
 from visual_memory_lab.learned_video import LearnedVideoIndex, LearnedVideoRetriever
+from visual_memory_lab.video_application import answer_follow_up, context_interval, summarize_video, video_catalog
 
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 ALLOWED_IMAGE_TYPES = {"image/png", "image/jpeg"}
@@ -68,8 +72,8 @@ class AppConfig:
     inspection_db: Path = Path("outputs/phase8/inspections.sqlite3")
     technician_questions: Path = Path("data/phase7/technician_questions.jsonl")
     technician_output: Path = Path("outputs/phase7/technician-benchmark")
-    charades_windows: Path = Path("outputs/charades/windows/windows.jsonl")
-    charades_learned_index: Path = Path("outputs/charades/learned/index")
+    charades_windows: Path = Path("outputs/charades/learned/windows/windows.jsonl")
+    charades_learned_index: Path = Path("outputs/charades/learned/full/index")
 
 
 @dataclass
@@ -247,6 +251,74 @@ def create_app(
             "retrieval_mode": retrieval_mode,
             "results": results,
         }
+
+    @app.get("/api/video-memory/catalog")
+    def video_memory_catalog() -> dict[str, object]:
+        windows = current().charades_windows
+        if windows is None:
+            raise HTTPException(status_code=404, detail="Charades temporal memory is not prepared")
+        return {"dataset": "charades", "videos": video_catalog(windows)}
+
+    @app.post("/api/video-memory/summarize")
+    def video_memory_summary(request: VideoSummaryRequest) -> dict[str, object]:
+        windows = current().charades_windows
+        if windows is None:
+            raise HTTPException(status_code=404, detail="Charades temporal memory is not prepared")
+        try:
+            return summarize_video(windows, request.video_id)
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail="video not found") from error
+
+    @app.post("/api/video-memory/follow-up")
+    def video_memory_follow_up(request: VideoFollowUpRequest) -> dict[str, object]:
+        if request.end_s <= request.start_s:
+            raise HTTPException(status_code=422, detail="end_s must be greater than start_s")
+        windows = current().charades_windows
+        if windows is None:
+            raise HTTPException(status_code=404, detail="Charades temporal memory is not prepared")
+        try:
+            matching = [item for item in windows if str(item.get("video_id")) == request.video_id]
+            if not matching:
+                raise KeyError(request.video_id)
+            duration_s = max(float(item.get("end_s", 0.0)) for item in matching)
+            interval = context_interval(request.start_s, request.end_s, duration_s, padding_s=0.0)
+            return answer_follow_up(
+                windows,
+                request.video_id,
+                request.question,
+                start_s=interval["start_s"],
+                end_s=interval["end_s"],
+            )
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail="video not found") from error
+
+    @app.post("/api/video-memory/findings")
+    def create_video_finding(request: VideoFindingCreateRequest) -> dict[str, object]:
+        windows = current().charades_windows
+        if windows is None:
+            raise HTTPException(status_code=404, detail="Charades temporal memory is not prepared")
+        if request.end_s <= request.start_s:
+            raise HTTPException(status_code=422, detail="end_s must be greater than start_s")
+        if not any(str(item.get("video_id")) == request.video_id for item in windows):
+            raise HTTPException(status_code=404, detail="video not found")
+        if current().inspections is None:
+            raise HTTPException(status_code=503, detail="finding storage is unavailable")
+        return current().inspections.create_video_finding(request.model_dump(mode="json"))
+
+    @app.get("/api/video-memory/findings")
+    def list_video_findings() -> list[dict[str, object]]:
+        if current().inspections is None:
+            return []
+        return current().inspections.list_video_findings()
+
+    @app.get("/api/video-memory/findings/{finding_id}")
+    def video_finding_detail(finding_id: str) -> dict[str, object]:
+        try:
+            if current().inspections is None:
+                raise KeyError(finding_id)
+            return current().inspections.get_video_finding(finding_id)
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail="video finding not found") from error
 
     @app.get("/api/video-memory/videos/{video_id}")
     def video_memory_file(video_id: str) -> FileResponse:

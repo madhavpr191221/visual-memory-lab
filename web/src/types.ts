@@ -37,6 +37,63 @@ export interface VideoMemoryResponse {
   results: VideoMemoryWindow[];
 }
 
+export interface VideoCatalogItem {
+  video_id: string;
+  video_url: string;
+  duration_s: number;
+  description: string;
+  objects: string[];
+}
+
+export interface VideoCatalogResponse { dataset: string; videos: VideoCatalogItem[]; }
+
+export interface VideoEvent {
+  start_s: number;
+  end_s: number;
+  label: string;
+  evidence_window_id: string;
+  confidence: string;
+  limitations: string[];
+  labels?: string[];
+  source_events?: VideoEvent[];
+}
+
+export interface VideoSummary {
+  video_id: string;
+  video_url: string;
+  overview: string;
+  events: VideoEvent[];
+  raw_events: VideoEvent[];
+  objects: string[];
+  source: string;
+  vlm_used: boolean;
+}
+
+export interface VideoFinding {
+  id: string;
+  video_id: string;
+  question: string;
+  start_s: number;
+  end_s: number;
+  answer: string;
+  evidence_window_ids: string[];
+  status: "confirmed" | "unclear" | "needs_manual_review" | "rejected";
+  note: string;
+  limitations: string[];
+  source: string;
+  created_at: string;
+}
+
+export interface VideoFollowUp {
+  video_id: string;
+  question: string;
+  answer: string;
+  supported: boolean;
+  evidence_window_ids: string[];
+  limitations: string[];
+  source: string;
+}
+
 export interface ZoneSummary {
   slug: string;
   name: string;

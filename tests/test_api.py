@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 from PIL import Image
 
 from visual_memory_lab.api import AppConfig, AppResources, create_app
+from visual_memory_lab.inspection_store import InspectionStore
 
 from tests.test_ui_service import make_service
 from tests.test_object_showcase import make_object_showcase
@@ -69,6 +70,7 @@ def test_video_memory_search_returns_timestamped_windows(tmp_path: Path) -> None
         service=service,
         memory=service.memory,
         queries=service.queries,
+        inspections=InspectionStore(tmp_path / "findings.sqlite3"),
         charades_windows=[
             {
                 "window_id": "ABC12:0-4",
@@ -87,6 +89,42 @@ def test_video_memory_search_returns_timestamped_windows(tmp_path: Path) -> None
         response = client.get("/api/video-memory", params={"q": "open door"})
         assert response.status_code == 200
         assert response.json()["results"][0]["video_url"].endswith("/ABC12")
+
+
+def test_video_summary_and_follow_up_are_evidence_scoped(tmp_path: Path) -> None:
+    service = make_service(tmp_path)
+    resources = AppResources(
+        service=service,
+        memory=service.memory,
+        queries=service.queries,
+        inspections=InspectionStore(tmp_path / "findings.sqlite3"),
+        charades_windows=[
+            {
+                "window_id": "VID:0-4", "video_id": "VID", "video_path": str(tmp_path / "VID.mp4"),
+                "split": "train", "start_s": 0.0, "end_s": 4.0,
+                "actions": [{"action_id": "c1", "name": "Opening a door", "start_s": 1.0, "end_s": 2.0}],
+                "objects": ["door"], "description": "A person opens a door.;Another view.",
+            },
+            {
+                "window_id": "VID:2-6", "video_id": "VID", "video_path": str(tmp_path / "VID.mp4"),
+                "split": "train", "start_s": 2.0, "end_s": 6.0,
+                "actions": [{"action_id": "c2", "name": "Sitting in a chair", "start_s": 3.0, "end_s": 5.0}],
+                "objects": ["chair"], "description": "A person sits.",
+            },
+        ],
+    )
+    with TestClient(create_app(AppConfig(web_dist=tmp_path / "missing"), resources=resources)) as client:
+        summary = client.post("/api/video-memory/summarize", json={"video_id": "VID"})
+        assert summary.status_code == 200
+        assert [event["label"] for event in summary.json()["events"]] == ["Opening a door", "Sitting in a chair"]
+        follow_up = client.post("/api/video-memory/follow-up", json={"video_id": "VID", "question": "What happened?", "start_s": 2.0, "end_s": 4.0})
+        assert follow_up.status_code == 200
+        assert "Sitting in a chair" in follow_up.json()["answer"]
+        finding = client.post("/api/video-memory/findings", json={"video_id": "VID", "question": "What happened?", "start_s": 2.0, "end_s": 4.0, "answer": "A person sat down.", "evidence_window_ids": ["VID:2-6"], "status": "confirmed", "note": "Checked."})
+        assert finding.status_code == 200
+        finding_id = finding.json()["id"]
+        assert client.get("/api/video-memory/findings").json()[0]["id"] == finding_id
+        assert client.get(f"/api/video-memory/findings/{finding_id}").json()["status"] == "confirmed"
 
 
 def test_image_search_validation_and_allowlisted_serving(tmp_path: Path) -> None:

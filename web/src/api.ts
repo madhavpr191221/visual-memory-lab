@@ -14,6 +14,10 @@ import type {
   Phase612Showcase,
   Phase613Showcase,
   VideoMemoryResponse,
+  VideoCatalogResponse,
+  VideoSummary,
+  VideoFollowUp,
+  VideoFinding,
 } from "./types";
 
 export class ApiError extends Error {
@@ -30,8 +34,9 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
   if (!response.ok) {
     let message = `Request failed (${response.status})`;
     try {
-      const body = (await response.json()) as { detail?: string };
-      if (body.detail) message = body.detail;
+      const body = (await response.json()) as { detail?: unknown };
+      if (typeof body.detail === "string") message = body.detail;
+      else if (body.detail) message = `Request validation failed: ${JSON.stringify(body.detail)}`;
     } catch {
       // Preserve the HTTP fallback message.
     }
@@ -43,6 +48,12 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
 export const api = {
   guidedDemo: () => request<GuidedDemo>("/api/guided-demo"),
   videoMemory: (query: string) => request<VideoMemoryResponse>(`/api/video-memory?q=${encodeURIComponent(query)}`),
+  videoCatalog: () => request<VideoCatalogResponse>("/api/video-memory/catalog"),
+  summarizeVideo: (videoId: string) => request<VideoSummary>("/api/video-memory/summarize", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ video_id: videoId }) }),
+  videoFollowUp: (videoId: string, question: string, startS: number, endS: number) => request<VideoFollowUp>("/api/video-memory/follow-up", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ video_id: videoId, question, start_s: startS, end_s: endS }) }),
+  videoFindings: () => request<VideoFinding[]>("/api/video-memory/findings"),
+  createVideoFinding: (payload: Omit<VideoFinding, "id" | "created_at">) => request<VideoFinding>("/api/video-memory/findings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) }),
+  videoFinding: (id: string) => request<VideoFinding>(`/api/video-memory/findings/${encodeURIComponent(id)}`),
   capabilities: () => request<Capabilities>("/api/capabilities"),
   searchText: (question: string, displayK: 3 | 5 | 10) =>
     request<SearchResponse>("/api/search/text", {

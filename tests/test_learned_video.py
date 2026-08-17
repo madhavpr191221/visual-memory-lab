@@ -12,6 +12,7 @@ from visual_memory_lab.learned_video import (
     LearnedVideoIndex,
     boundary_error,
     build_frame_manifest,
+    diversify_video_results,
     interval_iou,
     sample_window_timestamps,
     window_text,
@@ -57,3 +58,13 @@ def test_exact_index_round_trip_and_search(tmp_path: Path) -> None:
 def test_temporal_metrics_are_interpretable() -> None:
     assert interval_iou((0.0, 4.0), (2.0, 6.0)) == 1 / 3
     assert boundary_error((0.0, 4.0), (1.0, 5.0)) == 1.0
+
+
+def test_diversification_removes_overlapping_neighbours() -> None:
+    candidates = [
+        {"video_id": "a", "start_s": 0.0, "end_s": 4.0, "score": 0.99},
+        {"video_id": "a", "start_s": 2.0, "end_s": 6.0, "score": 0.98},
+        {"video_id": "b", "start_s": 0.0, "end_s": 4.0, "score": 0.97},
+    ]
+    result = diversify_video_results(candidates, top_k=2)
+    assert [(item["video_id"], item["start_s"]) for item in result] == [("a", 0.0), ("b", 0.0)]

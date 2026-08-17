@@ -92,6 +92,30 @@ class InspectionSummaryRequest(ApiModel):
     cached: bool = False
 
 
+class VideoSummaryRequest(ApiModel):
+    video_id: str = Field(min_length=1, max_length=32)
+
+
+class VideoFollowUpRequest(ApiModel):
+    video_id: str = Field(min_length=1, max_length=32)
+    question: str = Field(min_length=1, max_length=500)
+    start_s: float = Field(ge=0)
+    end_s: float = Field(gt=0)
+
+
+class VideoFindingCreateRequest(ApiModel):
+    video_id: str = Field(min_length=1, max_length=32)
+    question: str = Field(min_length=1, max_length=500)
+    start_s: float = Field(ge=0)
+    end_s: float = Field(gt=0)
+    answer: str = Field(min_length=1, max_length=4000)
+    evidence_window_ids: list[str] = Field(default_factory=list, max_length=32)
+    status: Literal["confirmed", "unclear", "needs_manual_review", "rejected"] = "unclear"
+    note: str = Field(default="", max_length=1000)
+    limitations: list[str] = Field(default_factory=list, max_length=30)
+    source: str = Field(default="official_charades_annotations", max_length=120)
+
+
 class EvidenceCitation(ApiModel):
     observation_id: str
     claim: str

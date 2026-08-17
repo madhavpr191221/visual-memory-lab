@@ -22,6 +22,7 @@ The result is deliberately careful. A similar-looking chair is not automatically
 ## What is implemented
 
 - CLIP ViT-B/32 image and text retrieval over real office frames;
+- application-facing video memory with “Find a moment” and timestamped video summaries;
 - pose-grounded retrieval evaluation and recurring office place zones;
 - Grounding DINO candidate boxes and SAM 2.1 visible-pixel masks;
 - recorded ETH RGB-D point-cloud evidence in a shared room frame;
@@ -177,7 +178,8 @@ uv run visual-memory-lab build-charades-windows `
 Then start the UI as usual and open `/app/video`. The first retrieval method is
 an explicit annotation-text baseline. The learned pipeline below adds frozen
 CLIP frame/text embeddings and a trainable temporal head. See [Phase 9 —
-Charades video memory](docs/phases/09_charades_video_memory.md).
+Charades video memory](docs/phases/09_charades_video_memory.md) and the living
+[video memory data and retrieval notes](docs/charades_video_memory.md).
 
 ### Learned video artifacts (Phase 10)
 

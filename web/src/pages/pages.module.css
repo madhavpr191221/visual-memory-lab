@@ -10,6 +10,8 @@
 .segments .active { color: var(--ink); background: var(--surface); box-shadow: 0 2px 9px rgba(40, 37, 30, .08); }
 .countSelect { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 13px; }
 .countSelect select { color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 9px; padding: 7px; }
+.selectField { display: grid; gap: 8px; color: var(--muted); font-weight: 700; margin-bottom: 14px; }
+.selectField select { width: 100%; padding: 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--paper); color: var(--ink); }
 .question { display: grid; grid-template-columns: 1fr auto; align-items: stretch; gap: 10px; }
 .question textarea { width: 100%; min-height: 82px; resize: vertical; border: 1px solid var(--line); border-radius: 14px; padding: 18px; background: var(--paper); color: var(--ink); font-size: 18px; line-height: 1.45; }
 .primary { border: 0; border-radius: 14px; padding: 0 24px; background: var(--blue); color: var(--paper); font-weight: 800; min-width: 120px; }
@@ -51,6 +53,15 @@
 .confirmActions button:first-child { border: 0; background: var(--blue); color: var(--paper); }
 .confirmActions button:last-child { border: 1px solid var(--line); background: var(--surface); color: var(--ink); }
 .analysis { margin-top: 22px; padding: 26px; }
+.timeline { margin-top: 22px; padding: 24px; }
+.timeline > video { width: 100%; max-height: 460px; background: #111; border-radius: 12px; margin-bottom: 18px; }
+.timelineEvent { display: grid; gap: 5px; width: 100%; text-align: left; padding: 14px 16px; margin-top: 9px; border: 1px solid var(--line); border-radius: 11px; background: var(--surface); color: var(--ink); cursor: pointer; }
+.timelineEvent:hover { border-color: var(--blue); background: var(--blue-soft); }
+.timelineEvent span { color: var(--blue); font-size: 12px; font-weight: 800; }
+.timelineEvent small { color: var(--muted); }
+.timelineNote { color: var(--muted); margin-top: -8px; }
+.followUp { margin-top: 22px; padding: 24px; }
+.followUp > p { color: var(--muted); }
 .analysis h2 { font-size: 30px; margin-bottom: 10px; }
 .analysis p { line-height: 1.7; }
 .citationList { display: grid; gap: 10px; margin: 18px 0; }

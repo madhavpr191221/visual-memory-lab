@@ -315,12 +315,12 @@ def build_parser() -> argparse.ArgumentParser:
     serve.add_argument(
         "--charades-windows",
         type=Path,
-        default=Path("outputs/charades/windows/windows.jsonl"),
+        default=Path("outputs/charades/learned/windows/windows.jsonl"),
     )
     serve.add_argument(
         "--charades-learned-index",
         type=Path,
-        default=Path("outputs/charades/learned/index"),
+        default=Path("outputs/charades/learned/full/index"),
     )
     serve.add_argument("--inspection-db", type=Path, default=Path("outputs/phase8/inspections.sqlite3"))
     serve.add_argument("--device", default="auto")

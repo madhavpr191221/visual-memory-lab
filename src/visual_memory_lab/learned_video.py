@@ -490,6 +490,51 @@ def build_index_from_cache(
     return summary
 
 
+def diversify_video_results(
+    results: list[dict[str, object]],
+    *,
+    top_k: int,
+    max_per_video: int = 2,
+    overlap_threshold: float = 0.25,
+) -> list[dict[str, object]]:
+    """Keep high-scoring, temporally distinct evidence windows.
+
+    Retrieval deliberately over-fetches candidates because neighbouring windows
+    can describe the same event. This pass is presentation logic: it does not
+    alter the stored scores or vectors.
+    """
+
+    if top_k < 1:
+        return []
+    selected: list[dict[str, object]] = []
+    per_video: dict[str, int] = {}
+    deferred: list[dict[str, object]] = []
+    for candidate in results:
+        video_id = str(candidate.get("video_id", ""))
+        count = per_video.get(video_id, 0)
+        interval = (float(candidate.get("start_s", 0.0)), float(candidate.get("end_s", 0.0)))
+        same_video_overlap = any(
+            str(item.get("video_id", "")) == video_id
+            and interval_iou(
+                interval,
+                (float(item.get("start_s", 0.0)), float(item.get("end_s", 0.0))),
+            ) >= overlap_threshold
+            for item in selected
+        )
+        if count >= max_per_video or same_video_overlap:
+            deferred.append(candidate)
+            continue
+        selected.append(candidate)
+        per_video[video_id] = count + 1
+        if len(selected) >= top_k:
+            return selected
+    for candidate in deferred:
+        if len(selected) >= top_k:
+            break
+        selected.append(candidate)
+    return selected[:top_k]
+
+
 @dataclass(frozen=True)
 class LearnedVideoIndex:
     vectors: np.ndarray
@@ -516,11 +561,13 @@ class LearnedVideoIndex:
         vectors = np.load(path / "vectors.npy")
         return cls(vectors=vectors, records=records, model_id=str(metadata["model_id"]), model_revision=str(metadata["model_revision"]))
 
-    def search(self, query: np.ndarray, top_k: int = 8) -> list[dict[str, object]]:
+    def search(self, query: np.ndarray, top_k: int = 8, *, diversify: bool = True) -> list[dict[str, object]]:
         query = query / max(float(np.linalg.norm(query)), 1e-8)
         scores = self.vectors @ query
-        order = np.argsort(-scores)[:top_k]
-        return [{**self.records[int(index)], "score": round(float(scores[index]), 4), "retrieval_mode": "learned_temporal_clip"} for index in order]
+        candidate_k = min(len(self.records), max(top_k * 4, top_k)) if diversify else top_k
+        order = np.argsort(-scores)[:candidate_k]
+        candidates = [{**self.records[int(index)], "score": round(float(scores[index]), 4), "retrieval_mode": "learned_temporal_clip"} for index in order]
+        return diversify_video_results(candidates, top_k=top_k) if diversify else candidates
 
 
 class LearnedVideoRetriever:

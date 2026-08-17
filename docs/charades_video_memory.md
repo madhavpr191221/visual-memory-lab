@@ -417,3 +417,126 @@ The next retrieval-quality improvement is to diversify results: suppress highly
 overlapping windows from the same video, cap the number of results per video,
 and show the short window action labels separately from the full-video
 descriptions.
+
+## 9. Application workflow: find a moment or summarize a video
+
+The application now exposes two simple tasks over the same prepared memory.
+
+### Find a moment
+
+```text
+technician question
+        ↓
+retrieve candidate windows
+        ↓
+remove overlapping duplicates
+        ↓
+show distinct playable moments
+        ↓
+review the evidence
+```
+
+For example:
+
+> When did the person sit down?
+
+The result is a short list of distinct time ranges. The system retrieves more
+candidates internally, then suppresses neighbouring windows from the same video
+when their time overlap is substantial. This avoids showing five copies of the
+same event simply because the four-second windows overlap.
+
+### Summarize a video
+
+```text
+choose one prepared video
+        ↓
+read its ordered action intervals
+        ↓
+build a timestamped event timeline
+        ↓
+select an event
+        ↓
+ask a follow-up about that evidence
+```
+
+The first implementation uses the official Charades action intervals to create
+the timeline. This is deliberate: it gives us a reproducible, auditable summary
+before introducing a cloud-generated interpretation.
+
+Example:
+
+```text
+21.0–27.2 s   Putting a pillow somewhere
+20.7–29.6 s   Sitting in a chair
+16.6–22.7 s   Going from standing to sitting
+```
+
+The user can select one event and ask a question such as:
+
+> What happened around this event?
+
+The answer is scoped to that event and its immediate context. It is not allowed
+to silently inspect the entire archive.
+
+### Review and save a finding
+
+The application treats a selected result as a reviewable finding:
+
+1. Select a search result or grouped timeline event.
+2. Review the event with a short before/during/after playback context.
+3. Ask a follow-up question limited to that evidence interval.
+4. Mark the result as confirmed, unclear, needing manual review, or rejected.
+5. Save the question, answer, timestamp, evidence IDs, and an optional note.
+
+Timeline events are grouped when their annotation intervals overlap or are very
+close together. The raw annotation list remains available for audit, while the
+grouped story is the default view for a non-technical user. Saved video findings
+are stored in local SQLite history separately from office-image inspections.
+
+This phase still uses prepared Charades recordings and official annotations. It
+does not present annotations as VLM judgments. A future explicit action may ask
+a VLM to explain one selected event, but the original video evidence and its
+limitations will remain visible.
+
+## 10. Evaluation for the application
+
+The two tasks require different measurements.
+
+### Retrieval evaluation
+
+For text-to-moment retrieval, compare the returned interval with an official
+action interval:
+
+$$
+\operatorname{IoU}(I_{\mathrm{pred}}, I_{\mathrm{true}})
+= \frac{|I_{\mathrm{pred}}\cap I_{\mathrm{true}}|}
+        {|I_{\mathrm{pred}}\cup I_{\mathrm{true}}|}.
+$$
+
+We measure Recall@1/5/10, temporal IoU, boundary error, and duplicate rate. The
+duplicate rate is particularly relevant to the user experience: a high score
+with eight near-identical clips is not a useful answer.
+
+### Timeline evaluation
+
+For video summarization, measure whether the timeline contains the right events,
+in the right order, with reasonable times:
+
+- event precision and recall;
+- temporal IoU against official action intervals;
+- start/end boundary error;
+- event ordering accuracy;
+- missed-event rate.
+
+### Follow-up evaluation
+
+For an evidence-scoped follow-up, check that the answer:
+
+- uses only the selected event and nearby context;
+- cites an available evidence window;
+- does not invent an unseen action;
+- says “unclear” when the evidence is insufficient.
+
+The current annotation timeline is the evaluation reference. A future VLM
+caption can enrich the explanation, but it must not silently replace the
+official action intervals used for measurement.
