@@ -1,21 +1,80 @@
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { api } from "../api";
-import type { VideoMemoryResponse } from "../types";
+import type { VideoCatalogResponse, VideoFollowUp, VideoGroundedAnswer, VideoMemoryResponse, VideoMemoryWindow, VideoSummary } from "../types";
 import styles from "./pages.module.css";
 
+type Mode = "find" | "summarize";
+type FindingStatus = "confirmed" | "unclear" | "needs_manual_review" | "rejected";
+
+type SelectedEvidence = {
+  videoId: string;
+  start: number;
+  end: number;
+  contextStart?: number;
+  contextEnd?: number;
+  label: string;
+  contextActions?: string[];
+  recordedAction?: VideoMemoryWindow["recorded_action"];
+  resultLimitations?: string[];
+  ids: string[];
+};
+
+const EXAMPLES = [
+  "When did the person open the door?",
+  "When did the person sit down?",
+  "What happened before the person picked up the bag?",
+];
+
 export function VideoMemoryPage() {
+  const [mode, setMode] = useState<Mode>("find");
   const [query, setQuery] = useState("");
+  const [catalog, setCatalog] = useState<VideoCatalogResponse | null>(null);
+  const [videoId, setVideoId] = useState("");
   const [result, setResult] = useState<VideoMemoryResponse | null>(null);
+  const [summary, setSummary] = useState<VideoSummary | null>(null);
+  const [selected, setSelected] = useState<SelectedEvidence | null>(null);
+  const [question, setQuestion] = useState("");
+  const [followUp, setFollowUp] = useState<VideoFollowUp | null>(null);
+  const [synthesis, setSynthesis] = useState<VideoGroundedAnswer | null>(null);
+  const [synthesisLoading, setSynthesisLoading] = useState(false);
+  const [status, setStatus] = useState<FindingStatus>("unclear");
+  const [note, setNote] = useState("");
+  const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
+  const [catalogLoading, setCatalogLoading] = useState(true);
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    api.videoCatalog()
+      .then(setCatalog)
+      .catch((caught) => setError(caught instanceof Error ? caught.message : "Could not load recordings."))
+      .finally(() => setCatalogLoading(false));
+  }, []);
+
+  function resetEvidence() {
+    setResult(null);
+    setSummary(null);
+    setSelected(null);
+    setFollowUp(null);
+    setSynthesis(null);
+    setMessage("");
+  }
+
+  function changeVideo(value: string) {
+    setVideoId(value);
+    resetEvidence();
+    setError("");
+  }
 
   async function search(event: FormEvent) {
     event.preventDefault();
-    if (!query.trim()) return;
+    if (!videoId || !query.trim()) return;
     setLoading(true);
     setError("");
+    resetEvidence();
     try {
-      setResult(await api.videoMemory(query));
+      const response = await api.videoMemory(query, videoId);
+      setResult(response);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Video search failed.");
     } finally {
@@ -23,53 +82,151 @@ export function VideoMemoryPage() {
     }
   }
 
-  return (
-    <>
-      <section className={styles.hero}>
-        <div>
-          <p className="eyebrow">Video memory</p>
-          <h1>Find the moment, not just the video.</h1>
-          <p>Ask when an action happened or when an object appeared. Each result is a short time window with the annotation and video evidence beside it.</p>
+  async function summarize(event: FormEvent) {
+    event.preventDefault();
+    if (!videoId) return;
+    setLoading(true);
+    setError("");
+    resetEvidence();
+    try {
+      setSummary(await api.summarizeVideo(videoId));
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Recording summary failed.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function choose(item: SelectedEvidence) {
+    setSelected(item);
+    setFollowUp(null);
+    setMessage("");
+    setError("");
+    setSynthesisLoading(true);
+    api.synthesizeVideo({ video_id: item.videoId, question: query || "What happened in this event?", event_label: item.label, start_s: item.start, end_s: item.end, evidence_window_ids: item.ids, mode: "detailed" })
+      .then(setSynthesis)
+      .catch((caught) => setError(caught instanceof Error ? caught.message : "Event explanation failed."))
+      .finally(() => setSynthesisLoading(false));
+  }
+
+  async function ask(event: FormEvent) {
+    event.preventDefault();
+    if (!selected || !question.trim()) return;
+    setLoading(true);
+    setError("");
+    try {
+      setFollowUp(await api.videoFollowUp(selected.videoId, question, selected.start, selected.end));
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Follow-up failed.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function save(event: FormEvent) {
+    event.preventDefault();
+    if (!selected || !followUp) return;
+    setLoading(true);
+    setError("");
+    try {
+      await api.createVideoFinding({
+        video_id: selected.videoId,
+        question: followUp.question,
+        start_s: selected.start,
+        end_s: selected.end,
+        answer: followUp.answer,
+        evidence_window_ids: followUp.evidence_window_ids,
+        status,
+        note,
+        limitations: followUp.limitations,
+        source: followUp.source,
+      });
+      setMessage("Finding saved. You can reopen it from Saved findings.");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Could not save finding.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const selectedRecording = catalog?.videos.find((item) => item.video_id === videoId);
+
+  return <>
+    <section className={styles.hero}>
+      <div>
+        <p className="eyebrow">Video memory</p>
+        <h1>Find evidence in a recording.</h1>
+        <p>Choose a recording, ask what you want to know, and review the exact moment before saving a finding.</p>
+      </div>
+      <aside className={styles.heroNote}>
+        <strong>How this works</strong>
+        <p>You choose the recording first. The system finds a moment, shows playable evidence, and explains what can safely be said.</p>
+      </aside>
+    </section>
+
+    <section className={`panel ${styles.searchPanel}`}>
+      <label className={styles.selectField}>
+        <span>Recording</span>
+        <select aria-label="Choose a recording" value={videoId} onChange={(event) => changeVideo(event.target.value)} disabled={catalogLoading}>
+          <option value="">{catalogLoading ? "Loading recordings…" : "Choose a recording first"}</option>
+          {catalog?.videos.map((video) => <option key={video.video_id} value={video.video_id}>{video.video_id} · {video.duration_s.toFixed(1)} seconds</option>)}
+        </select>
+      </label>
+      {selectedRecording && <div className={styles.fieldHint}><p><strong>Recording summary:</strong> {selectedRecording.description || "No dataset summary was supplied."}</p><small>Action labels, objects, and exact timestamps are hidden during retrieval so the question tests the memory system rather than the annotation list.</small></div>}
+      <div className={styles.modeRow}>
+        <div className={styles.segments} role="tablist" aria-label="Video task">
+          <button type="button" className={mode === "find" ? styles.active : ""} onClick={() => setMode("find")}>Find an event</button>
+          <button type="button" className={mode === "summarize" ? styles.active : ""} onClick={() => setMode("summarize")}>Review the timeline</button>
         </div>
-        <aside className={styles.heroNote}>
-          <strong>Charades temporal memory</strong>
-          <p>The first slice uses official action intervals as a transparent baseline. Learned CLIP and temporal retrieval will replace this baseline after the workflow is validated.</p>
-        </aside>
-      </section>
-      <form className={`panel ${styles.searchPanel}`} onSubmit={search}>
+      </div>
+      {mode === "find" ? <form onSubmit={search}>
         <div className={styles.question}>
-          <textarea aria-label="Video memory question" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="When did the person open the door?" />
-          <button className={styles.primary} disabled={loading || !query.trim()}>{loading ? "Searching…" : "Find moment"}</button>
+          <textarea aria-label="Video memory question" value={query} onChange={(event) => setQuery(event.target.value)} placeholder={videoId ? "What would you like to find in this recording?" : "Choose a recording before asking a question."} disabled={!videoId} />
+          <button className={styles.primary} disabled={loading || !videoId || !query.trim()}>{loading ? "Finding evidence…" : "Find evidence"}</button>
         </div>
-        <div className={styles.examples}>
-          {["When did the person open the door?", "When did the person sit down?", "When was the book visible?"].map((example) => (
-            <button type="button" key={example} onClick={() => setQuery(example)}>{example}</button>
-          ))}
-        </div>
-        {error && <p className="error" role="alert">{error}</p>}
-      </form>
-      {result && (
-        <section className={styles.results} aria-live="polite">
-          <div className={`panel ${styles.answerStrip}`}>
-            <div><span className="status strong">candidate moments</span><h2>{result.results.length} candidate moments</h2><p>{result.window_count} timestamped windows are available in the prepared Charades subset.</p></div>
-            <div className={styles.timeNotice}>Baseline: annotation matching; review the video evidence.</div>
-          </div>
-          <div className={styles.evidenceGrid}>
-            {result.results.map((item) => (
-              <article className={`panel ${styles.evidenceCard}`} key={item.window_id}>
-                {item.video_url && <video controls preload="metadata" src={`${item.video_url}#t=${item.start_s},${item.end_s}`} />}
-                <div className={styles.evidenceBody}>
-                  <div className={styles.evidenceTop}><span className={styles.rank}>{item.video_id}</span><span className={styles.score}>{item.start_s.toFixed(1)}–{item.end_s.toFixed(1)} s</span></div>
-                  <strong>{item.actions.map((action) => action.name).join(" · ") || "Relevant video window"}</strong>
-                  <small>Video-level objects: {item.objects.join(" · ") || "none listed"}</small>
-                  {item.description && <p>{item.description}</p>}
-                </div>
-              </article>
-            ))}
-          </div>
-          {result.results.length === 0 && <div className="panel"><p>No annotated window matched that question. This is a safe no-result, not proof that the event never happened.</p></div>}
-        </section>
-      )}
-    </>
-  );
+        <div className={styles.examples}>{EXAMPLES.map((example) => <button type="button" key={example} disabled={!videoId} onClick={() => setQuery(example)}>{example}</button>)}</div>
+      </form> : <form onSubmit={summarize}>
+        <p className={styles.fieldHint}>Review the actions that the recording explicitly marks with time intervals.</p>
+        <button className={styles.primary} disabled={loading || !videoId}>{loading ? "Preparing timeline…" : "Review timeline"}</button>
+      </form>}
+      {!videoId && !catalogLoading && <p className={styles.emptyState}>Choose a recording to begin. Your question will be answered only against that recording.</p>}
+      {error && <p className="error" role="alert">{error}</p>}
+    </section>
+
+    {mode === "find" && result && <SearchResults result={result} selected={selected} choose={choose} synthesis={synthesis} synthesisLoading={synthesisLoading} />}
+    {mode === "summarize" && summary && <TimelineReview summary={summary} choose={choose} />}
+    {selected && <EvidenceReview selected={selected} question={question} setQuestion={setQuestion} followUp={followUp} loading={loading} error={error} message={message} status={status} setStatus={setStatus} note={note} setNote={setNote} ask={ask} save={save} />}
+  </>;
+}
+
+function SearchResults({ result, selected, choose, synthesis, synthesisLoading }: { result: VideoMemoryResponse; selected: SelectedEvidence | null; choose: (item: SelectedEvidence) => void; synthesis: VideoGroundedAnswer | null; synthesisLoading: boolean }) {
+  return <section className={styles.results} aria-live="polite">
+    <div className={`panel ${styles.answerStrip}`}>
+       <div><span className="status strong">Candidate events</span><h2>{result.results.length} possible event{result.results.length === 1 ? "" : "s"}</h2><p>Each card is one distinct moment to review.</p></div>
+    </div>
+    {synthesisLoading && <div className={`panel ${styles.emptyState}`}><p>Preparing a grounded explanation from the strongest evidence…</p></div>}
+    {result.results.length === 0 ? <div className={`panel ${styles.emptyState}`}><h2>No supported event found</h2><p>{result.message || "This recording does not contain a matching event in the available evidence. Try a broader question or review the timeline."}</p></div> : <div className={styles.evidenceGrid}>{result.results.map((item) => {
+      const label = item.primary_action || "Relevant event";
+      const isSelected = selected?.videoId === item.video_id && Math.abs(selected.start - (item.action_start_s ?? item.recorded_action?.start_s ?? item.start_s)) < 0.01;
+        const evidenceIds = item.evidence_window_ids?.length ? item.evidence_window_ids : [item.window_id];
+        const actionStart = item.action_start_s ?? item.recorded_action?.start_s ?? item.start_s;
+        const actionEnd = item.action_end_s ?? item.recorded_action?.end_s ?? item.end_s;
+        const contextStart = item.context_start_s ?? item.start_s;
+        const contextEnd = item.context_end_s ?? item.end_s;
+        return <article className={`panel ${styles.evidenceCard} ${isSelected ? styles.selectedEvidence : ""}`} key={item.event_id ?? item.window_id} onClick={() => choose({ videoId: item.video_id, start: actionStart, end: actionEnd, contextStart, contextEnd, label, contextActions: item.context_actions, recordedAction: item.recorded_action, resultLimitations: item.result_limitations, ids: evidenceIds })}>
+        {item.video_url && <video controls preload="metadata" src={`${item.video_url}#t=${contextStart},${contextEnd}`} onClick={(event) => event.stopPropagation()} />}
+        <div className={styles.evidenceBody}><div className={styles.evidenceTop}><span className={styles.rank}>{item.video_id}</span><span className={styles.score}>Action {actionStart.toFixed(1)}–{actionEnd.toFixed(1)} s</span></div><h3>{label}</h3><div className={styles.evidenceRows}><p><strong>Matched action interval</strong><span>{actionStart.toFixed(1)}–{actionEnd.toFixed(1)} s</span></p><p><strong>Context shown</strong><span>{contextStart.toFixed(1)}–{contextEnd.toFixed(1)} s</span></p><p><strong>Annotation note</strong><span>{item.recorded_action?.note || "Dataset annotation; not independent visual proof."}</span></p><p><strong>Visual review</strong><span>{isSelected && synthesis ? (synthesis.visible_evidence || synthesis.answer) : "Select this event to inspect sampled frames."}</span></p></div>{item.context_actions?.length ? <small><strong>Overlapping context:</strong> {item.context_actions.join(" · ")}</small> : null}{item.objects.length > 0 && <small>Associated objects: {item.objects.join(" · ")}</small>}</div>
+      </article>;
+    })}</div>}
+  </section>;
+}
+
+function TimelineReview({ summary, choose }: { summary: VideoSummary; choose: (item: SelectedEvidence) => void }) {
+  return <section className={styles.results} aria-live="polite"><div className={`panel ${styles.answerStrip}`}><div><span className="status strong">Recording timeline</span><h2>{summary.video_id}</h2><p>{summary.overview || "The recording has official action annotations."}</p></div><div className={styles.timeNotice}>Timed actions are the events explicitly marked by the dataset.</div></div><div className={`panel ${styles.timeline}`}><video controls preload="metadata" src={summary.video_url} /><h2>Timed actions</h2><p className={styles.timelineNote}>Select an action to review it and ask a follow-up question.</p>{summary.events.map((item) => <button type="button" className={styles.timelineEvent} key={`${item.label}-${item.start_s}`} onClick={() => choose({ videoId: summary.video_id, start: item.start_s, end: item.end_s, label: item.label, ids: item.source_events?.map((event) => event.evidence_window_id) ?? [] })}><span>{item.start_s.toFixed(1)}–{item.end_s.toFixed(1)} s</span><strong>{item.label}</strong><small>Grouped from {item.source_events?.length ?? 1} source annotation(s).</small></button>)}</div></section>;
+}
+
+function EvidenceReview(props: { selected: SelectedEvidence; question: string; setQuestion: (value: string) => void; followUp: VideoFollowUp | null; loading: boolean; error: string; message: string; status: FindingStatus; setStatus: (value: FindingStatus) => void; note: string; setNote: (value: string) => void; ask: (event: FormEvent) => void; save: (event: FormEvent) => void }) {
+  const { selected } = props;
+  const setProps = { status: props.setStatus };
+  return <section className={`panel ${styles.followUp}`}><span className="eyebrow">Selected event</span><h2>{selected.label}</h2><video controls preload="metadata" src={`/api/video-memory/videos/${selected.videoId}#t=${Math.max(0, (selected.contextStart ?? selected.start) - 2)},${(selected.contextEnd ?? selected.end) + 2}`} /><p>Event estimate: {selected.start.toFixed(1)}–{selected.end.toFixed(1)} seconds. The player includes surrounding context for review.</p><form onSubmit={props.ask}><div className={styles.question}><textarea aria-label="Follow-up question" value={props.question} onChange={(event) => props.setQuestion(event.target.value)} placeholder="Ask about this selected event" /><button className={styles.primary} disabled={props.loading || !props.question.trim()}>{props.loading ? "Checking…" : "Ask"}</button></div></form>{props.followUp && <form className={styles.analysis} onSubmit={props.save}><span className={`status ${props.followUp.supported ? "supported" : "uncertain"}`}>{props.followUp.supported ? "Evidence-supported" : "Not established"}</span><p>{props.followUp.answer}</p><small>{props.followUp.limitations[0]}</small><label>Status<select value={props.status} onChange={(event) => setProps.status(event.target.value as FindingStatus)}><option value="unclear">Unclear</option><option value="confirmed">Confirmed</option><option value="needs_manual_review">Needs manual review</option><option value="rejected">Rejected</option></select></label><textarea aria-label="Finding note" value={props.note} onChange={(event) => props.setNote(event.target.value)} placeholder="Optional note for the finding" /><button className={styles.secondary} disabled={props.loading}>Save finding</button>{props.message && <p className="success">{props.message}</p>}</form>}{props.error && <p className="error" role="alert">{props.error}</p>}</section>;
 }

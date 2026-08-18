@@ -12,7 +12,7 @@ from typing import Annotated, AsyncIterator, Literal
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from PIL import Image, UnidentifiedImageError
 from pydantic import ValidationError
@@ -28,6 +28,10 @@ from visual_memory_lab.api_models import (
     InspectionCreateRequest,
     InspectionReportRequest,
     InspectionSummaryRequest,
+    VideoFollowUpRequest,
+    VideoSynthesisRequest,
+    VideoFindingCreateRequest,
+    VideoSummaryRequest,
     SearchResponse,
     TextSearchRequest,
 )
@@ -43,6 +47,8 @@ from visual_memory_lab.vlm_analysis import EvidenceAnalyzer
 from visual_memory_lab.inspection_store import InspectionStore
 from visual_memory_lab.technician_benchmark import load_questions
 from visual_memory_lab.charades import load_manifest, search_windows
+from visual_memory_lab.learned_video import LearnedVideoIndex, LearnedVideoRetriever, VideoActionResolver, group_video_events
+from visual_memory_lab.video_application import answer_follow_up, context_interval, summarize_video, video_catalog
 
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 ALLOWED_IMAGE_TYPES = {"image/png", "image/jpeg"}
@@ -67,7 +73,10 @@ class AppConfig:
     inspection_db: Path = Path("outputs/phase8/inspections.sqlite3")
     technician_questions: Path = Path("data/phase7/technician_questions.jsonl")
     technician_output: Path = Path("outputs/phase7/technician-benchmark")
-    charades_windows: Path = Path("outputs/charades/windows/windows.jsonl")
+    charades_windows: Path = Path("outputs/charades/learned/windows/windows.jsonl")
+    # The application index covers every prepared recording. Evaluation keeps
+    # using a separate train-only index and held-out test manifest.
+    charades_learned_index: Path = Path("outputs/charades/learned/application/index")
 
 
 @dataclass
@@ -81,6 +90,8 @@ class AppResources:
     associations: AssociationShowcase | None = None
     inspections: InspectionStore | None = None
     charades_windows: list[dict[str, object]] | None = None
+    charades_video: LearnedVideoRetriever | None = None
+    video_action_resolver: VideoActionResolver | None = None
 
 
 def load_resources(config: AppConfig) -> AppResources:
@@ -132,6 +143,31 @@ def load_resources(config: AppConfig) -> AppResources:
     charades_windows = None
     if config.charades_windows.is_file():
         charades_windows = load_manifest(config.charades_windows)
+        # Older prepared window artifacts did not carry all recording-level
+        # provenance fields. Enrich them from the sibling manifest at load
+        # time so the UI remains trustworthy without rewriting the MP4 index.
+        source_manifest = config.charades_windows.parent.parent / "manifest.jsonl"
+        if source_manifest.is_file():
+            by_video = {str(row.get("video_id")): row for row in load_manifest(source_manifest)}
+            for window in charades_windows:
+                source = by_video.get(str(window.get("video_id")), {})
+                for field in ("script", "scene", "subject", "description", "objects", "duration_s"):
+                    if field not in window or not window.get(field):
+                        if field in source:
+                            window[field] = source[field]
+    charades_video = None
+    video_action_resolver = None
+    if os.getenv("OPENAI_API_KEY"):
+        video_action_resolver = VideoActionResolver(model=config.analysis_model, cache_dir=config.analysis_cache / "video-action-resolver")
+    try:
+        if (config.charades_learned_index / "metadata.json").is_file():
+            charades_video = LearnedVideoRetriever(
+                LearnedVideoIndex.load(config.charades_learned_index),
+                device=config.device,
+                action_resolver=video_action_resolver,
+            )
+    except (FileNotFoundError, OSError, RuntimeError, ValueError):
+        charades_video = None
     return AppResources(
         service=service,
         memory=memory,
@@ -142,6 +178,8 @@ def load_resources(config: AppConfig) -> AppResources:
         associations=associations,
         inspections=InspectionStore(config.inspection_db),
         charades_windows=charades_windows,
+        charades_video=charades_video,
+        video_action_resolver=video_action_resolver,
     )
 
 
@@ -157,6 +195,34 @@ async def _read_upload(upload: UploadFile) -> Image.Image:
             return image.convert("RGB")
     except (OSError, UnidentifiedImageError) as error:
         raise HTTPException(status_code=422, detail="upload is not a readable image") from error
+
+
+def _sample_video_frames(path: Path, start_s: float, end_s: float, count: int = 6) -> list[tuple[str, float, Image.Image]]:
+    """Decode a small, deterministic RGB evidence set from an MP4."""
+    import av
+
+    if not path.is_file() or end_s <= start_s:
+        raise ValueError("video evidence interval is unavailable")
+    timestamps = [start_s + (index + 0.5) * (end_s - start_s) / count for index in range(count)]
+    output: list[tuple[str, float, Image.Image]] = []
+    target_index = 0
+    with av.open(str(path)) as container:
+        stream = container.streams.video[0]
+        for frame in container.decode(stream):
+            frame_time = float(frame.time or 0.0)
+            while target_index < len(timestamps) and frame_time >= timestamps[target_index]:
+                timestamp = timestamps[target_index]
+                output.append((f"frame-{target_index:02d}-{timestamp:.3f}", timestamp, frame.to_image().convert("RGB")))
+                target_index += 1
+            if target_index >= len(timestamps):
+                break
+    if not output:
+        raise ValueError("could not decode video evidence frames")
+    while len(output) < len(timestamps):
+        index = len(output)
+        timestamp = timestamps[index]
+        output.append((f"frame-{index:02d}-{timestamp:.3f}", timestamp, output[-1][2].copy()))
+    return output
 
 
 def create_app(
@@ -209,20 +275,258 @@ def create_app(
     def video_memory(
         q: str = Query(default=""),
         top_k: int = Query(default=8, ge=1, le=24),
+        video_id: str | None = Query(default=None, min_length=1, max_length=32),
     ) -> dict[str, object]:
         windows = current().charades_windows
         if windows is None:
             raise HTTPException(status_code=404, detail="Charades temporal memory is not prepared")
-        results = search_windows(windows, q, top_k=top_k) if q.strip() else []
+        if q.strip() and current().charades_video is not None:
+            results, support = current().charades_video.search_with_metadata(q, top_k=top_k, video_id=video_id)
+            retrieval_mode = "learned_temporal_clip_action_guard"
+            # The learned index is built from the training split, while the
+            # catalogue intentionally exposes held-out recordings as well.
+            # In that case the retriever has no indexed rows from which to
+            # derive the action vocabulary. Use the prepared annotation windows
+            # for that recording instead of reporting that it has no actions.
+            if not results and video_id:
+                catalog_matches = [
+                    item for item in windows
+                    if str(item.get("video_id", "")) == video_id
+                ]
+                fallback = search_windows(catalog_matches, q, top_k=top_k)
+                if fallback:
+                    results = fallback
+                    support = {
+                        "status": "supported",
+                        "matched_actions": [],
+                        "reason": "learned vectors are unavailable for this recording; matching annotated windows are shown",
+                        "fallback": True,
+                    }
+                    retrieval_mode = "annotation_fallback_unindexed_recording"
+        else:
+            eligible = (
+                [item for item in windows if str(item.get("video_id")) == video_id]
+                if video_id
+                else windows
+            )
+            results = search_windows(eligible, q, top_k=top_k) if q.strip() else []
+            support = {"status": "supported" if results else "unsupported", "matched_actions": [], "reason": "lexical fallback"}
+            retrieval_mode = "annotation_lexical_baseline"
+        results = group_video_events(results, top_k=min(top_k, 3))
+        matched_actions = [str(value) for value in support.get("matched_actions", []) if str(value).strip()]
+        for result in results:
+            actions = [
+                action for action in result.get("actions", [])
+                if isinstance(action, dict) and str(action.get("name", "")).strip()
+            ]
+            matched = [action for action in actions if str(action.get("name")) in matched_actions]
+            primary = matched[0] if matched else (actions[0] if actions else None)
+            primary_name = str(primary.get("name")) if primary else (matched_actions[0] if matched_actions else "Relevant event")
+            context_actions = [
+                str(action.get("name")) for action in actions
+                if str(action.get("name")) != primary_name
+            ]
+            result["primary_action"] = primary_name
+            result["context_actions"] = list(dict.fromkeys(context_actions))
+            result["recorded_action"] = {
+                "label": primary_name,
+                "start_s": float(primary.get("start_s", result.get("start_s", 0.0))) if primary else float(result.get("start_s", 0.0)),
+                "end_s": float(primary.get("end_s", result.get("end_s", 0.0))) if primary else float(result.get("end_s", 0.0)),
+                "source_window_ids": list(result.get("evidence_window_ids", [])),
+                "note": "The recorded action comes from the dataset annotation; it is not independent visual proof.",
+            }
+            # Keep three intervals distinct: the exact annotation, the
+            # retrieved/index window, and the padded playback context.
+            result["action_start_s"] = float(result["recorded_action"]["start_s"])
+            result["action_end_s"] = float(result["recorded_action"]["end_s"])
+            result["evidence_start_s"] = float(result.get("context_start_s", result.get("start_s", 0.0)))
+            result["evidence_end_s"] = float(result.get("context_end_s", result.get("end_s", 0.0)))
+            duration_s = max(
+                float(item.get("duration_s", item.get("end_s", 0.0)))
+                for item in windows
+                if str(item.get("video_id", "")) == str(result.get("video_id", ""))
+            )
+            # A few Charades annotations extend a fraction beyond the encoded
+            # MP4 duration. Never display or seek past playable evidence.
+            result["recorded_action"]["start_s"] = max(
+                0.0, min(float(result["recorded_action"]["start_s"]), duration_s)
+            )
+            result["recorded_action"]["end_s"] = max(
+                result["recorded_action"]["start_s"],
+                min(float(result["recorded_action"]["end_s"]), duration_s),
+            )
+            result["action_start_s"] = result["recorded_action"]["start_s"]
+            result["action_end_s"] = result["recorded_action"]["end_s"]
+            context = context_interval(
+                result["action_start_s"], result["action_end_s"], duration_s, padding_s=2.0
+            )
+            result["context_start_s"] = context["start_s"]
+            result["context_end_s"] = context["end_s"]
+            result["result_limitations"] = [
+                "The action label is an annotation reference, not proof that every detail is visually identifiable.",
+                "The sampled frames may be too small, blurred, or occluded to verify the object or action fully.",
+            ]
         for result in results:
             result["video_url"] = f"/api/video-memory/videos/{result['video_id']}"
         return {
             "dataset": "charades",
             "window_count": len(windows),
+            "catalog_window_count": len(windows),
+            "indexed_window_count": (
+                len(current().charades_video.index.records)
+                if current().charades_video is not None
+                else 0
+            ),
             "query": q,
-            "retrieval_mode": "annotation_lexical_baseline",
+            "video_id": video_id,
+            "retrieval_mode": retrieval_mode,
+            "support_status": support.get("status", "unsupported"),
+            "matched_actions": matched_actions,
+            "message": (
+                "The question matched an action available in this recording."
+                if support.get("status") == "supported"
+                else str(support.get("reason", "No supported event was found in this recording."))
+            ),
             "results": results,
         }
+
+    @app.get("/api/video-memory/frame/{video_id}")
+    def video_memory_frame(video_id: str, timestamp_s: float = Query(..., ge=0.0)) -> Response:
+        """Return one decoded evidence frame without writing a derived file."""
+        windows = current().charades_windows
+        if windows is None:
+            raise HTTPException(status_code=404, detail="Charades temporal memory is not prepared")
+        matches = [item for item in windows if str(item.get("video_id")) == video_id]
+        if not matches:
+            raise HTTPException(status_code=404, detail="video not found")
+        path = Path(str(matches[0].get("video_path", ""))).resolve()
+        duration_s = max(float(item.get("duration_s", item.get("end_s", 0.0))) for item in matches)
+        timestamp = min(timestamp_s, max(duration_s - 1e-3, 0.0))
+        try:
+            frame = _sample_video_frames(path, timestamp, min(duration_s, timestamp + 0.01), count=1)[0][2]
+            buffer = io.BytesIO()
+            frame.save(buffer, format="JPEG", quality=88)
+            frame.close()
+            return Response(content=buffer.getvalue(), media_type="image/jpeg")
+        except (OSError, ValueError, RuntimeError) as error:
+            raise HTTPException(status_code=422, detail="could not decode evidence frame") from error
+
+    @app.get("/api/video-memory/catalog")
+    def video_memory_catalog() -> dict[str, object]:
+        windows = current().charades_windows
+        if windows is None:
+            raise HTTPException(status_code=404, detail="Charades temporal memory is not prepared")
+        return {"dataset": "charades", "videos": video_catalog(windows)}
+
+    @app.post("/api/video-memory/summarize")
+    def video_memory_summary(request: VideoSummaryRequest) -> dict[str, object]:
+        windows = current().charades_windows
+        if windows is None:
+            raise HTTPException(status_code=404, detail="Charades temporal memory is not prepared")
+        try:
+            return summarize_video(windows, request.video_id)
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail="video not found") from error
+
+    @app.post("/api/video-memory/follow-up")
+    def video_memory_follow_up(request: VideoFollowUpRequest) -> dict[str, object]:
+        if request.end_s <= request.start_s:
+            raise HTTPException(status_code=422, detail="end_s must be greater than start_s")
+        windows = current().charades_windows
+        if windows is None:
+            raise HTTPException(status_code=404, detail="Charades temporal memory is not prepared")
+        try:
+            matching = [item for item in windows if str(item.get("video_id")) == request.video_id]
+            if not matching:
+                raise KeyError(request.video_id)
+            duration_s = max(float(item.get("end_s", 0.0)) for item in matching)
+            interval = context_interval(request.start_s, request.end_s, duration_s, padding_s=0.0)
+            return answer_follow_up(
+                windows,
+                request.video_id,
+                request.question,
+                start_s=interval["start_s"],
+                end_s=interval["end_s"],
+            )
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail="video not found") from error
+
+    @app.post("/api/video-memory/synthesize")
+    def video_memory_synthesize(request: VideoSynthesisRequest) -> dict[str, object]:
+        windows = current().charades_windows
+        if windows is None:
+            raise HTTPException(status_code=404, detail="Charades temporal memory is not prepared")
+        matching = [item for item in windows if str(item.get("video_id")) == request.video_id]
+        if not matching:
+            raise HTTPException(status_code=404, detail="video not found")
+        evidence = [item for item in matching if str(item.get("window_id")) in request.evidence_window_ids]
+        if not evidence:
+            evidence = [item for item in matching if float(item.get("end_s", 0.0)) > request.start_s and float(item.get("start_s", 0.0)) < request.end_s]
+        if not evidence:
+            raise HTTPException(status_code=422, detail="no evidence windows overlap the selected event")
+        actions = sorted({str(action.get("name", "")) for item in evidence for action in item.get("actions", []) if isinstance(action, dict) and action.get("name")})
+        objects = sorted({str(value) for item in evidence for value in item.get("objects", [])})
+        fallback = answer_follow_up(windows, request.video_id, request.question, start_s=request.start_s, end_s=request.end_s)
+        fallback.update({
+            "event_label": request.event_label,
+            "confidence": "medium" if fallback["supported"] else "low",
+            "evidence_citations": [{"observation_id": item, "claim": "Overlapping annotated evidence window."} for item in fallback["evidence_window_ids"]],
+            "cached": False,
+            "model": None,
+            "source": "annotation_fallback",
+            "visible_evidence": "The selected frames were not analyzed by the visual model.",
+            "visual_evidence_supported": None,
+            "visual_support_status": "not_visibly_confirmed",
+        })
+        analyzer = current().analysis
+        if analyzer is None:
+            return fallback
+        try:
+            path = Path(str(evidence[0].get("video_path", ""))).resolve()
+            frames = _sample_video_frames(path, request.start_s, request.end_s)
+            result = analyzer.synthesize_video(
+                question=request.question,
+                video_id=request.video_id,
+                event_label=request.event_label,
+                start_s=request.start_s,
+                end_s=request.end_s,
+                frames=frames,
+                actions=actions,
+                objects=objects,
+                mode=request.mode,
+            )
+            result.update({"video_id": request.video_id, "event_label": request.event_label, "start_s": request.start_s, "end_s": request.end_s})
+            return result
+        except Exception:
+            return fallback
+
+    @app.post("/api/video-memory/findings")
+    def create_video_finding(request: VideoFindingCreateRequest) -> dict[str, object]:
+        windows = current().charades_windows
+        if windows is None:
+            raise HTTPException(status_code=404, detail="Charades temporal memory is not prepared")
+        if request.end_s <= request.start_s:
+            raise HTTPException(status_code=422, detail="end_s must be greater than start_s")
+        if not any(str(item.get("video_id")) == request.video_id for item in windows):
+            raise HTTPException(status_code=404, detail="video not found")
+        if current().inspections is None:
+            raise HTTPException(status_code=503, detail="finding storage is unavailable")
+        return current().inspections.create_video_finding(request.model_dump(mode="json"))
+
+    @app.get("/api/video-memory/findings")
+    def list_video_findings() -> list[dict[str, object]]:
+        if current().inspections is None:
+            return []
+        return current().inspections.list_video_findings()
+
+    @app.get("/api/video-memory/findings/{finding_id}")
+    def video_finding_detail(finding_id: str) -> dict[str, object]:
+        try:
+            if current().inspections is None:
+                raise KeyError(finding_id)
+            return current().inspections.get_video_finding(finding_id)
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail="video finding not found") from error
 
     @app.get("/api/video-memory/videos/{video_id}")
     def video_memory_file(video_id: str) -> FileResponse:

@@ -90,6 +90,58 @@ def build_parser() -> argparse.ArgumentParser:
     windows.add_argument("--window-seconds", type=_positive_float, default=4.0)
     windows.add_argument("--stride-seconds", type=_positive_float, default=2.0)
 
+    learned = subparsers.add_parser(
+        "build-charades-frames",
+        help="write deterministic frame timestamps for learned Charades windows",
+    )
+    learned.add_argument("--manifest", type=Path, required=True)
+    learned.add_argument("--output", type=Path, required=True)
+    learned.add_argument("--frames-per-window", type=_positive_integer, default=16)
+
+    cache = subparsers.add_parser(
+        "build-charades-video-cache",
+        help="decode Charades windows and cache frozen CLIP frame/text embeddings",
+    )
+    cache.add_argument("--manifest", type=Path, required=True)
+    cache.add_argument("--output", type=Path, required=True)
+    cache.add_argument("--device", default="auto")
+    cache.add_argument("--batch-size", type=_positive_integer, default=16)
+    cache.add_argument("--max-videos", type=_positive_integer)
+    cache.add_argument("--workers", type=_positive_integer, default=4)
+    cache.add_argument("--resume", action="store_true")
+
+    train_video = subparsers.add_parser(
+        "train-charades-video",
+        help="train the temporal head on cached Charades video embeddings",
+    )
+    train_video.add_argument("--cache", type=Path, required=True)
+    train_video.add_argument("--output", type=Path, required=True)
+    train_video.add_argument("--device", default="auto")
+    train_video.add_argument("--epochs", type=_positive_integer, default=3)
+    train_video.add_argument("--batch-size", type=_positive_integer, default=32)
+    train_video.add_argument("--learning-rate", type=_positive_float, default=1e-4)
+    train_video.add_argument("--finetune-vision-blocks", type=_non_negative_integer, default=0)
+    train_video.add_argument("--split", choices=("train", "test"), default="train")
+
+    index_video = subparsers.add_parser(
+        "index-charades-video",
+        help="build an exact learned temporal index from a cache and head checkpoint",
+    )
+    index_video.add_argument("--cache", type=Path, required=True)
+    index_video.add_argument("--checkpoint", type=Path)
+    index_video.add_argument("--output", type=Path, required=True)
+    index_video.add_argument("--device", default="auto")
+    index_video.add_argument("--split", choices=("train", "test", "all"), default="train")
+
+    evaluate_video = subparsers.add_parser(
+        "evaluate-charades-video",
+        help="evaluate learned Charades retrieval against official action intervals",
+    )
+    evaluate_video.add_argument("--index", type=Path, required=True)
+    evaluate_video.add_argument("--test-manifest", type=Path, required=True)
+    evaluate_video.add_argument("--output", type=Path, required=True)
+    evaluate_video.add_argument("--device", default="auto")
+
     zones = subparsers.add_parser(
         "label-zones",
         help="curate cached VLM-assisted place zones from a training manifest",
@@ -263,7 +315,12 @@ def build_parser() -> argparse.ArgumentParser:
     serve.add_argument(
         "--charades-windows",
         type=Path,
-        default=Path("outputs/charades/windows/windows.jsonl"),
+        default=Path("outputs/charades/learned/windows/windows.jsonl"),
+    )
+    serve.add_argument(
+        "--charades-learned-index",
+        type=Path,
+        default=Path("outputs/charades/learned/full/index"),
     )
     serve.add_argument("--inspection-db", type=Path, default=Path("outputs/phase8/inspections.sqlite3"))
     serve.add_argument("--device", default="auto")
@@ -438,6 +495,84 @@ def main(argv: Sequence[str] | None = None) -> int:
             f"Built {summary['window_count']} Charades temporal windows in "
             f"{args.output.resolve()}"
         )
+    elif args.command == "build-charades-frames":
+        from visual_memory_lab.learned_video import build_frame_manifest
+
+        try:
+            summary = build_frame_manifest(
+                windows_manifest=args.manifest,
+                output=args.output,
+                frames_per_window=args.frames_per_window,
+            )
+        except (FileExistsError, OSError, ValueError) as error:
+            parser.error(str(error))
+        print(f"Wrote {summary['window_count']} frame records with {summary['frames_per_window']} frames per window in {args.output.resolve()}")
+    elif args.command == "build-charades-video-cache":
+        from visual_memory_lab.learned_video import build_embedding_cache
+
+        try:
+            summary = build_embedding_cache(
+                args.manifest,
+                args.output,
+                device=args.device,
+                batch_size=args.batch_size,
+                max_videos=args.max_videos,
+                workers=args.workers,
+                resume=args.resume,
+            )
+        except (FileExistsError, OSError, RuntimeError, ValueError) as error:
+            parser.error(str(error))
+        print(f"Cached CLIP embeddings for {summary['window_count']} windows on {summary['device']} in {args.output.resolve()}")
+    elif args.command == "train-charades-video":
+        from visual_memory_lab.learned_video import train_temporal_from_cache
+
+        if args.finetune_vision_blocks:
+            parser.error("vision fine-tuning requires raw-window training and is reserved for the next training subphase; use --finetune-vision-blocks 0")
+        try:
+            summary = train_temporal_from_cache(
+                args.cache,
+                args.output,
+                device=args.device,
+                epochs=args.epochs,
+                batch_size=args.batch_size,
+                learning_rate=args.learning_rate,
+                split=args.split,
+            )
+        except (FileExistsError, OSError, RuntimeError, ValueError) as error:
+            parser.error(str(error))
+        print(f"Trained the temporal head for {summary['epochs']} epochs on {summary['device']} in {args.output.resolve()}")
+    elif args.command == "index-charades-video":
+        from visual_memory_lab.learned_video import build_index_from_cache
+
+        try:
+            summary = build_index_from_cache(
+                args.cache,
+                args.checkpoint,
+                args.output,
+                device=args.device,
+                split=args.split,
+            )
+        except (FileExistsError, OSError, RuntimeError, ValueError) as error:
+            parser.error(str(error))
+        print(f"Indexed {summary['count']} learned video windows in {args.output.resolve()}")
+    elif args.command == "evaluate-charades-video":
+        from visual_memory_lab.learned_video import evaluate_index
+
+        try:
+            metrics = evaluate_index(
+                args.index,
+                args.test_manifest,
+                args.output,
+                device=args.device,
+            )
+        except (FileExistsError, OSError, RuntimeError, ValueError) as error:
+            parser.error(str(error))
+        print(
+            f"Evaluated {metrics['query_count']} video queries; "
+            f"Recall@1={metrics['recall_at_k']['1']:.4f}, "
+            f"Recall@5={metrics['recall_at_k']['5']:.4f}, "
+            f"Recall@10={metrics['recall_at_k']['10']:.4f} in {args.output.resolve()}"
+        )
     elif args.command == "label-zones":
         from visual_memory_lab.zone_labeling import label_zones
 
@@ -500,6 +635,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 technician_output=args.technician_output,
                 inspection_db=args.inspection_db,
                 charades_windows=args.charades_windows,
+                charades_learned_index=args.charades_learned_index,
             )
         )
         uvicorn.run(app, host=args.host, port=args.port)
@@ -702,3 +838,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             parser.error(str(error))
         print(f"Pseudo-audited {summary['reviewed_count']} association candidates")
     return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

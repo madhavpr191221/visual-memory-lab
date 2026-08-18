@@ -122,6 +122,8 @@ class ClipEncoder:
         inputs = self.processor(
             text=list(texts),
             padding=True,
+            truncation=True,
+            max_length=77,
             return_tensors="pt",
         ).to(self.device)
         with torch.inference_mode():

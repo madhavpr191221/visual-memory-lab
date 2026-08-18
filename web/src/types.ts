@@ -13,16 +13,34 @@ export interface Capabilities {
 }
 
 export interface VideoMemoryWindow {
-  window_id: string;
+    window_id: string;
+    event_id?: string;
+    evidence_window_ids?: string[];
   video_id: string;
   video_path: string;
   video_url?: string;
   split: string;
   start_s: number;
   end_s: number;
+  context_start_s?: number;
+  context_end_s?: number;
+  action_start_s?: number;
+  action_end_s?: number;
+  evidence_start_s?: number;
+  evidence_end_s?: number;
   score?: number;
   retrieval_mode?: string;
   actions: { action_id: string; name: string; start_s: number; end_s: number }[];
+  primary_action?: string;
+  context_actions?: string[];
+  recorded_action?: {
+    label: string;
+    start_s: number;
+    end_s: number;
+    source_window_ids: string[];
+    note: string;
+  };
+  result_limitations?: string[];
   objects: string[];
   description: string;
 }
@@ -30,9 +48,95 @@ export interface VideoMemoryWindow {
 export interface VideoMemoryResponse {
   dataset: string;
   window_count: number;
+  catalog_window_count: number;
+  indexed_window_count: number;
   query: string;
+  video_id?: string | null;
   retrieval_mode: string;
+  support_status?: "supported" | "unsupported";
+  matched_actions?: string[];
+  message?: string;
   results: VideoMemoryWindow[];
+}
+
+export interface VideoCatalogItem {
+  video_id: string;
+  video_url: string;
+  duration_s: number;
+  description: string;
+  script?: string;
+  scene?: string;
+  subject?: string;
+  objects: string[];
+  actions?: { action_id: string; name: string; start_s: number; end_s: number }[];
+  overlap_groups?: string[][];
+}
+
+export interface VideoCatalogResponse { dataset: string; videos: VideoCatalogItem[]; }
+
+export interface VideoEvent {
+  start_s: number;
+  end_s: number;
+  label: string;
+  evidence_window_id: string;
+  confidence: string;
+  limitations: string[];
+  labels?: string[];
+  source_events?: VideoEvent[];
+}
+
+export interface VideoSummary {
+  video_id: string;
+  video_url: string;
+  overview: string;
+  events: VideoEvent[];
+  raw_events: VideoEvent[];
+  objects: string[];
+  source: string;
+  vlm_used: boolean;
+}
+
+export interface VideoFinding {
+  id: string;
+  video_id: string;
+  question: string;
+  start_s: number;
+  end_s: number;
+  answer: string;
+  evidence_window_ids: string[];
+  status: "confirmed" | "unclear" | "needs_manual_review" | "rejected";
+  note: string;
+  limitations: string[];
+  source: string;
+  created_at: string;
+}
+
+export interface VideoFollowUp {
+  video_id: string;
+  question: string;
+  answer: string;
+  supported: boolean;
+  evidence_window_ids: string[];
+  limitations: string[];
+  source: string;
+}
+
+export interface VideoGroundedAnswer {
+  video_id: string;
+  event_label: string;
+  start_s: number;
+  end_s: number;
+  answer: string;
+  supported: boolean;
+  confidence: "low" | "medium" | "high";
+  evidence_citations: { observation_id: string; claim: string }[];
+  limitations: string[];
+  visible_evidence?: string;
+  visual_evidence_supported?: boolean | null;
+  visual_support_status?: "supported" | "partially_visible" | "unclear" | "not_visibly_confirmed";
+  model?: string | null;
+  cached?: boolean;
+  source: string;
 }
 
 export interface ZoneSummary {

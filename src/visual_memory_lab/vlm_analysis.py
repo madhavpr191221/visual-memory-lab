@@ -14,6 +14,7 @@ from PIL import Image
 from pydantic import BaseModel, ConfigDict, Field
 
 PROMPT_VERSION = "phase4-evidence-analysis-v1"
+VIDEO_PROMPT_VERSION = "video-event-synthesis-v1"
 
 
 class StrictModel(BaseModel):
@@ -53,6 +54,18 @@ class InspectionReport(StrictModel):
     supporting_evidence: list[EvidenceCitation]
     limitations: list[str]
     recommended_manual_check: str
+
+
+class VideoGroundedAnswer(StrictModel):
+    answer: str
+    event_label: str
+    supported: bool
+    confidence: Literal["low", "medium", "high"]
+    evidence_citations: list[EvidenceCitation]
+    limitations: list[str]
+    visible_evidence: str = ""
+    visual_evidence_supported: bool | None = None
+    visual_support_status: Literal["supported", "partially_visible", "unclear", "not_visibly_confirmed"] = "unclear"
 
 
 def _image_part(image: Image.Image) -> tuple[dict[str, str], str]:
@@ -175,6 +188,63 @@ class EvidenceAnalyzer:
         parsed = self._parse(content, VisualSummary)
         return {**parsed.model_dump(mode="json"), "model": self.model, "cached": False}
 
+    def synthesize_video(
+        self,
+        *,
+        question: str,
+        video_id: str,
+        event_label: str,
+        start_s: float,
+        end_s: float,
+        frames: list[tuple[str, float, Image.Image]],
+        actions: list[str],
+        objects: list[str],
+        mode: Literal["preview", "detailed"] = "preview",
+    ) -> dict[str, object]:
+        """Write a grounded answer from timestamped RGB evidence frames."""
+        if not frames:
+            raise ValueError("at least one video evidence frame is required")
+        evidence_ids = [item[0] for item in frames]
+        prompt = (
+            "You are reviewing sampled RGB frames from one public Charades recording. "
+            "Answer the user's question only from the supplied frames and metadata. "
+            "Use the event interval as an annotation/model reference, not as proof of an "
+            "unseen action. Do not invent identity, intent, or events outside the interval. "
+            "If the frames do not support the answer, set supported=false. Cite only the "
+            "supplied evidence IDs. Return `visible_evidence` as one plain-language sentence "
+            "describing only what can be seen. Set `visual_support_status` to supported, "
+            "partially_visible, unclear, or not_visibly_confirmed. Use partially_visible when "
+            "the action/object appears in only some sampled frames. Keep the legacy boolean "
+            "`visual_evidence_supported` consistent with supported or partially_visible. "
+            f"Mode: {mode}. Video: {video_id}. Question: {question.strip()}\n"
+            f"Candidate event: {event_label} ({start_s:.2f}-{end_s:.2f} seconds).\n"
+            f"Annotated actions: {', '.join(actions) or 'none supplied'}.\n"
+            f"Associated objects: {', '.join(objects) or 'none supplied'}.\n"
+            f"Evidence IDs: {', '.join(evidence_ids)}"
+        )
+        content: list[dict[str, object]] = [{"type": "input_text", "text": prompt}]
+        image_hashes: list[str] = []
+        for evidence_id, timestamp, image in frames:
+            part, digest = _image_part(image)
+            content.extend([
+                {"type": "input_text", "text": f"Evidence {evidence_id} at {timestamp:.2f} seconds:"},
+                part,
+            ])
+            image_hashes.append(digest)
+        cache_path = self.cache_dir / "video" / f"{hashlib.sha256(json.dumps({'model': self.model, 'prompt_version': VIDEO_PROMPT_VERSION, 'prompt': prompt, 'images': image_hashes}, sort_keys=True).encode()).hexdigest()}.json"
+        if cache_path.is_file():
+            cached = json.loads(cache_path.read_text(encoding="utf-8"))
+            parsed = VideoGroundedAnswer.model_validate(cached["parsed"])
+            self._validate_video_citations(parsed, evidence_ids)
+            return {**parsed.model_dump(mode="json"), "model": cached["model"], "cached": True, "source": "vlm_video_synthesis"}
+        parsed = self._parse(content, VideoGroundedAnswer)
+        if not isinstance(parsed, VideoGroundedAnswer):
+            raise ValueError("video synthesis response did not match the required schema")
+        self._validate_video_citations(parsed, evidence_ids)
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        cache_path.write_text(json.dumps({"model": self.model, "parsed": parsed.model_dump(mode="json")}, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        return {**parsed.model_dump(mode="json"), "model": self.model, "cached": False, "source": "vlm_video_synthesis"}
+
     def report(
         self,
         *,
@@ -251,3 +321,12 @@ class EvidenceAnalyzer:
             raise ValueError(f"analysis cited unknown evidence: {', '.join(unknown)}")
         if parsed.supported and not cited:
             raise ValueError("a supported answer must cite at least one supplied observation")
+
+    @staticmethod
+    def _validate_video_citations(parsed: VideoGroundedAnswer, evidence_ids: list[str]) -> None:
+        cited = [citation.observation_id for citation in parsed.evidence_citations]
+        unknown = sorted(set(cited) - set(evidence_ids))
+        if unknown:
+            raise ValueError(f"video synthesis cited unknown evidence: {', '.join(unknown)}")
+        if parsed.supported and not cited:
+            raise ValueError("a supported video answer must cite supplied evidence")

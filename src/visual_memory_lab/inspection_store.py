@@ -39,6 +39,20 @@ class InspectionStore:
                     PRIMARY KEY (inspection_id, observation_id),
                     FOREIGN KEY (inspection_id) REFERENCES inspections(id)
                 );
+                CREATE TABLE IF NOT EXISTS video_findings (
+                    id TEXT PRIMARY KEY,
+                    video_id TEXT NOT NULL,
+                    question TEXT NOT NULL,
+                    start_s REAL NOT NULL,
+                    end_s REAL NOT NULL,
+                    answer TEXT NOT NULL,
+                    evidence_window_ids TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    note TEXT NOT NULL,
+                    limitations TEXT NOT NULL,
+                    source TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                );
                 """
             )
             columns = {str(row["name"]) for row in connection.execute("PRAGMA table_info(inspections)").fetchall()}
@@ -125,6 +139,28 @@ class InspectionStore:
             connection.execute("UPDATE inspections SET report_json = ?, result_text = ?, status = ?, limitations = ? WHERE id = ?", (json.dumps(report), result_text, status, json.dumps(limitations), inspection_id))
         return self.get(inspection_id)
 
+    def create_video_finding(self, payload: dict[str, object]) -> dict[str, object]:
+        finding_id = uuid.uuid4().hex
+        created_at = datetime.now(timezone.utc).isoformat()
+        with self._connect() as connection:
+            connection.execute(
+                "INSERT INTO video_findings (id, video_id, question, start_s, end_s, answer, evidence_window_ids, status, note, limitations, source, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (finding_id, str(payload["video_id"]), str(payload["question"]), float(payload["start_s"]), float(payload["end_s"]), str(payload["answer"]), json.dumps(payload.get("evidence_window_ids", [])), str(payload.get("status", "unclear")), str(payload.get("note", "")), json.dumps(payload.get("limitations", [])), str(payload.get("source", "official_charades_annotations")), created_at),
+            )
+        return self.get_video_finding(finding_id)
+
+    def list_video_findings(self) -> list[dict[str, object]]:
+        with self._connect() as connection:
+            rows = connection.execute("SELECT * FROM video_findings ORDER BY created_at DESC").fetchall()
+        return [self._video_row(row) for row in rows]
+
+    def get_video_finding(self, finding_id: str) -> dict[str, object]:
+        with self._connect() as connection:
+            row = connection.execute("SELECT * FROM video_findings WHERE id = ?", (finding_id,)).fetchone()
+        if row is None:
+            raise KeyError(finding_id)
+        return self._video_row(row)
+
     @staticmethod
     def _row(row: sqlite3.Row) -> dict[str, object]:
         payload = dict(row)
@@ -132,4 +168,11 @@ class InspectionStore:
         for key in ("summary_json", "report_json"):
             value = payload.get(key)
             payload[key] = json.loads(str(value)) if value else None
+        return payload
+
+    @staticmethod
+    def _video_row(row: sqlite3.Row) -> dict[str, object]:
+        payload = dict(row)
+        payload["evidence_window_ids"] = json.loads(str(payload["evidence_window_ids"]))
+        payload["limitations"] = json.loads(str(payload["limitations"]))
         return payload
