@@ -8,7 +8,9 @@ small temporal head learns one vector per window.  The annotation retriever in
 
 from __future__ import annotations
 
+import hashlib
 import json
+import re
 import time
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import nullcontext
@@ -19,12 +21,66 @@ import numpy as np
 import torch
 from torch import Tensor, nn
 
-from visual_memory_lab.charades import load_manifest
+from visual_memory_lab.charades import load_manifest, search_windows
 from visual_memory_lab.encoder import MODEL_ID, MODEL_REVISION, resolve_device
-from visual_memory_lab.temporal import TemporalWindowEncoder, symmetric_contrastive_loss
+from visual_memory_lab.temporal import ThreeHeadTemporalModel, TemporalWindowEncoder, symmetric_contrastive_loss, three_head_loss
 
 _CLIP_MEAN = torch.tensor([0.48145466, 0.4578275, 0.40821073]).view(1, 3, 1, 1)
 _CLIP_STD = torch.tensor([0.26862954, 0.26130258, 0.27577711]).view(1, 3, 1, 1)
+
+
+def _record_action_names(record: dict[str, object]) -> set[str]:
+    return {
+        str(action.get("name", "")).strip()
+        for action in record.get("actions", [])
+        if isinstance(action, dict) and str(action.get("name", "")).strip()
+    }
+
+
+class VideoActionResolver:
+    """Resolve natural-language questions to exact recording action labels."""
+
+    def __init__(self, *, model: str, cache_dir: Path, client: object | None = None) -> None:
+        self.model = model
+        self.cache_dir = cache_dir
+        self._client = client
+
+    def resolve(self, question: str, action_names: list[str], candidate_names: list[str] | None = None) -> dict[str, object]:
+        labels = sorted(set(action_names))
+        if not labels:
+            return {"matched_action_names": [], "unsupported": True, "reason": "recording has no annotated actions", "cached": False}
+        prompt = (
+            "Map the user question to zero or more exact action names from the supplied list. "
+            "Return JSON only with matched_action_names, unsupported, and reason. Never invent "
+            "labels. Return unsupported=true when no supplied label answers the question.\n\n"
+            f"Question: {question.strip()}\nCLIP shortlist: {json.dumps(candidate_names or labels, ensure_ascii=False)}\n"
+            f"Available action names: {json.dumps(labels, ensure_ascii=False)}"
+        )
+        digest = hashlib.sha256((self.model + "\n" + prompt).encode("utf-8")).hexdigest()
+        cache_path = self.cache_dir / f"action-resolve-{digest}.json"
+        if cache_path.is_file():
+            return {**json.loads(cache_path.read_text(encoding="utf-8")), "cached": True}
+        if self._client is None:
+            from openai import OpenAI
+            self._client = OpenAI()
+        response = self._client.responses.create(
+            model=self.model,
+            input=prompt,
+            text={"format": {"type": "json_object"}},
+            store=False,
+        )
+        parsed = json.loads(str(getattr(response, "output_text", "")).strip())
+        matched = [str(value) for value in parsed.get("matched_action_names", []) if str(value) in labels]
+        result = {
+            "matched_action_names": sorted(set(matched)),
+            "unsupported": not bool(matched),
+            "reason": str(parsed.get("reason", "")),
+            "model": str(getattr(response, "model", self.model)),
+            "cached": False,
+        }
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        cache_path.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        return result
 
 
 def _ensure_empty(path: Path) -> None:
@@ -34,7 +90,7 @@ def _ensure_empty(path: Path) -> None:
 
 
 def sample_window_timestamps(
-    start_s: float, end_s: float, frames_per_window: int = 8
+    start_s: float, end_s: float, frames_per_window: int = 16
 ) -> list[float]:
     """Return evenly spaced centre timestamps for one temporal window."""
 
@@ -72,7 +128,7 @@ def build_frame_manifest(
     windows_manifest: Path,
     output: Path,
     *,
-    frames_per_window: int = 8,
+    frames_per_window: int = 16,
 ) -> dict[str, object]:
     """Write deterministic frame timestamps without duplicating MP4 files."""
 
@@ -411,7 +467,7 @@ def train_temporal_from_cache(
     learning_rate: float = 1e-4,
     split: str = "train",
 ) -> dict[str, object]:
-    """Train the temporal head against cached frozen-CLIP features."""
+    """Train retrieval, action, and boundary heads against cached features."""
 
     _ensure_empty(output)
     resolved = resolve_device(device)
@@ -428,33 +484,79 @@ def train_temporal_from_cache(
     texts = texts[selected]
     if len(frames) < 2:
         raise ValueError("at least two windows are required for contrastive training")
-    head = TemporalWindowEncoder(
+    action_names = sorted({
+        str(action.get("action_id"))
+        for record in records
+        for action in record.get("actions", [])
+        if isinstance(action, dict) and action.get("action_id")
+    })
+    if not action_names:
+        raise ValueError("cache records contain no action labels")
+    action_index = {name: index for index, name in enumerate(action_names)}
+    action_targets = torch.zeros((len(records), len(action_names)), dtype=torch.float32)
+    boundary_targets = torch.zeros((len(records), 2), dtype=torch.float32)
+    boundary_mask = torch.zeros(len(records), dtype=torch.bool)
+    for row_index, record in enumerate(records):
+        window_start = float(record.get("start_s", 0.0))
+        window_end = float(record.get("end_s", 0.0))
+        window_length = max(window_end - window_start, 1e-6)
+        best_overlap = 0.0
+        for action in record.get("actions", []):
+            if not isinstance(action, dict):
+                continue
+            action_id = str(action.get("action_id", ""))
+            if action_id in action_index:
+                action_targets[row_index, action_index[action_id]] = 1.0
+            action_start = float(action.get("start_s", 0.0))
+            action_end = float(action.get("end_s", 0.0))
+            overlap = max(0.0, min(window_end, action_end) - max(window_start, action_start))
+            if overlap > best_overlap:
+                best_overlap = overlap
+                boundary_targets[row_index] = torch.tensor([
+                    max(0.0, min(1.0, (action_start - window_start) / window_length)),
+                    max(0.0, min(1.0, (action_end - window_start) / window_length)),
+                ])
+                boundary_mask[row_index] = True
+    action_targets = action_targets[selected]
+    boundary_targets = boundary_targets[selected]
+    boundary_mask = boundary_mask[selected]
+    model = ThreeHeadTemporalModel(
         frames.shape[-1],
+        len(action_names),
         output_dim=texts.shape[-1],
         max_frames=frames.shape[1],
     ).to(resolved)
-    optimizer = torch.optim.AdamW(head.parameters(), lr=learning_rate)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
     history: list[dict[str, float]] = []
     generator = torch.Generator().manual_seed(42)
     for epoch in range(epochs):
         order = torch.randperm(len(frames), generator=generator)
-        head.train()
+        model.train()
         losses: list[float] = []
+        loss_parts: dict[str, list[float]] = {"retrieval": [], "action": [], "boundary": []}
         for start in range(0, len(order), batch_size):
             indices = order[start : start + batch_size]
             if len(indices) < 2:
                 continue
-            video = head(frames[indices].to(resolved))
+            outputs = model(frames[indices].to(resolved))
             text = texts[indices].to(resolved)
-            loss = symmetric_contrastive_loss(video, text)
+            loss, parts = three_head_loss(
+                outputs,
+                text,
+                action_targets[indices].to(resolved),
+                boundary_targets[indices].to(resolved),
+                boundary_mask[indices].to(resolved),
+            )
             optimizer.zero_grad(set_to_none=True)
             loss.backward()
             optimizer.step()
             losses.append(float(loss.detach().cpu()))
-        history.append({"epoch": epoch + 1, "loss": float(np.mean(losses)) if losses else float("nan")})
-    torch.save({"state_dict": head.state_dict(), "input_dim": frames.shape[-1], "output_dim": texts.shape[-1], "max_frames": int(frames.shape[1])}, output / "temporal_head.pt")
+            for key, value in parts.items():
+                loss_parts[key].append(float(value.detach().cpu()))
+        history.append({"epoch": epoch + 1, "loss": float(np.mean(losses)) if losses else float("nan"), **{f"{key}_loss": float(np.mean(value)) if value else float("nan") for key, value in loss_parts.items()}})
+    torch.save({"state_dict": model.state_dict(), "input_dim": frames.shape[-1], "output_dim": texts.shape[-1], "max_frames": int(frames.shape[1]), "action_names": action_names, "model_type": "three_head_temporal_v1"}, output / "temporal_multitask.pt")
     (output / "history.jsonl").write_text("".join(json.dumps(item) + "\n" for item in history), encoding="utf-8")
-    summary = {"epochs": epochs, "window_count": len(frames), "split": split, "device": str(resolved), "trainable_parameters": sum(parameter.numel() for parameter in head.parameters()), "output": str(output.resolve())}
+    summary = {"epochs": epochs, "window_count": len(frames), "split": split, "device": str(resolved), "trainable_parameters": sum(parameter.numel() for parameter in model.parameters()), "action_count": len(action_names), "boundary_labeled_windows": int(boundary_mask.sum()), "model_type": "three_head_temporal_v1", "output": str(output.resolve())}
     (output / "summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
     return summary
 
@@ -472,18 +574,43 @@ def build_index_from_cache(
     _ensure_empty(output)
     frames = torch.from_numpy(np.load(cache / "frame_embeddings.npy")).float()
     records = [json.loads(line) for line in (cache / "records.jsonl").read_text(encoding="utf-8").splitlines() if line.strip()]
-    selected = [index for index, record in enumerate(records) if str(record.get("split")) == split]
+    selected = [
+        index for index, record in enumerate(records)
+        if split == "all" or str(record.get("split")) == split
+    ]
     if not selected:
         raise ValueError(f"cache contains no records for split {split!r}")
     frames = frames[selected]
     records = [records[index] for index in selected]
-    head = TemporalWindowEncoder(frames.shape[-1], output_dim=frames.shape[-1], max_frames=frames.shape[1]).to(resolve_device(device))
+    payload = None
+    head: torch.nn.Module
     if checkpoint is not None:
         payload = torch.load(checkpoint, map_location=resolve_device(device), weights_only=True)
+    if payload is not None and payload.get("model_type") == "three_head_temporal_v1":
+        head = ThreeHeadTemporalModel(frames.shape[-1], len(payload["action_names"]), output_dim=frames.shape[-1], max_frames=frames.shape[1]).to(resolve_device(device))
+    else:
+        head = TemporalWindowEncoder(frames.shape[-1], output_dim=frames.shape[-1], max_frames=frames.shape[1]).to(resolve_device(device))
+    if payload is not None:
         head.load_state_dict(payload["state_dict"])
     head.eval()
     with torch.inference_mode():
-        vectors = head(frames.to(head.position.device)).cpu().numpy()
+        if isinstance(head, ThreeHeadTemporalModel):
+            outputs = head(frames.to(next(head.parameters()).device))
+            vectors = outputs["retrieval"].cpu().numpy()
+            action_scores = torch.sigmoid(outputs["action_logits"]).cpu().numpy()
+            boundary = torch.sigmoid(outputs["boundary_logits"]).cpu().numpy()
+        else:
+            vectors = head(frames.to(head.position.device)).cpu().numpy()
+            action_scores = None
+            boundary = None
+    if action_scores is not None and payload is not None:
+        for index, record in enumerate(records):
+            start = float(record.get("start_s", 0.0))
+            end = float(record.get("end_s", 0.0))
+            length = end - start
+            record["predicted_action_scores"] = {name: round(float(action_scores[index, column]), 5) for column, name in enumerate(payload["action_names"])}
+            record["predicted_start_s"] = round(start + float(boundary[index, 0]) * length, 4)
+            record["predicted_end_s"] = round(start + float(boundary[index, 1]) * length, 4)
     summary = write_index(vectors, records, output)
     summary["split"] = split
     (output / "summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
@@ -508,7 +635,6 @@ def diversify_video_results(
         return []
     selected: list[dict[str, object]] = []
     per_video: dict[str, int] = {}
-    deferred: list[dict[str, object]] = []
     for candidate in results:
         video_id = str(candidate.get("video_id", ""))
         count = per_video.get(video_id, 0)
@@ -522,17 +648,87 @@ def diversify_video_results(
             for item in selected
         )
         if count >= max_per_video or same_video_overlap:
-            deferred.append(candidate)
             continue
         selected.append(candidate)
         per_video[video_id] = count + 1
         if len(selected) >= top_k:
             return selected
-    for candidate in deferred:
-        if len(selected) >= top_k:
-            break
-        selected.append(candidate)
     return selected[:top_k]
+
+
+def group_video_events(
+    results: list[dict[str, object]],
+    *,
+    top_k: int = 3,
+    overlap_threshold: float = 0.25,
+) -> list[dict[str, object]]:
+    """Turn ranked retrieval windows into distinct, reviewable events.
+
+    Charades windows overlap on purpose, so several high-scoring windows often
+    describe the same short action.  We keep the best window as the anchor and
+    absorb nearby windows from the same recording.  The source window IDs stay
+    attached so the result remains auditable.
+    """
+    if top_k < 1:
+        return []
+    groups: list[dict[str, object]] = []
+    for candidate in results:
+        video_id = str(candidate.get("video_id", ""))
+        context_interval = (float(candidate.get("start_s", 0.0)), float(candidate.get("end_s", 0.0)))
+        predicted_start = float(candidate.get("predicted_start_s", context_interval[0]))
+        predicted_end = float(candidate.get("predicted_end_s", context_interval[1]))
+        interval = (predicted_start, predicted_end) if predicted_end > predicted_start else context_interval
+        action_ids = {
+            str(action.get("action_id"))
+            for action in candidate.get("actions", [])
+            if isinstance(action, dict) and action.get("action_id")
+        }
+        match: dict[str, object] | None = None
+        for group in groups:
+            if str(group.get("video_id", "")) != video_id:
+                continue
+            group_interval = (float(group["start_s"]), float(group["end_s"]))
+            group_action_ids = set(group.get("_action_ids", []))
+            if interval_iou(interval, group_interval) >= overlap_threshold or action_ids & group_action_ids:
+                match = group
+                break
+        if match is None:
+            match = dict(candidate)
+            match["start_s"], match["end_s"] = interval
+            match["context_start_s"], match["context_end_s"] = context_interval
+            match["evidence_window_ids"] = [str(candidate.get("window_id", ""))]
+            match["_action_ids"] = sorted(action_ids)
+            groups.append(match)
+            continue
+
+        match["start_s"] = min(float(match["start_s"]), interval[0])
+        match["end_s"] = max(float(match["end_s"]), interval[1])
+        match["context_start_s"] = min(float(match.get("context_start_s", match["start_s"])), context_interval[0])
+        match["context_end_s"] = max(float(match.get("context_end_s", match["end_s"])), context_interval[1])
+        match["score"] = max(float(match.get("score", 0.0)), float(candidate.get("score", 0.0)))
+        evidence_ids = list(match.get("evidence_window_ids", []))
+        window_id = str(candidate.get("window_id", ""))
+        if window_id and window_id not in evidence_ids:
+            evidence_ids.append(window_id)
+        match["evidence_window_ids"] = evidence_ids
+        match["_action_ids"] = sorted(set(match.get("_action_ids", [])) | action_ids)
+        actions = list(match.get("actions", []))
+        known_actions = {(str(a.get("action_id")), str(a.get("name"))) for a in actions if isinstance(a, dict)}
+        for action in candidate.get("actions", []):
+            if not isinstance(action, dict):
+                continue
+            key = (str(action.get("action_id")), str(action.get("name")))
+            if key not in known_actions:
+                actions.append(action)
+                known_actions.add(key)
+        match["actions"] = actions
+        match["objects"] = sorted(set(match.get("objects", [])) | set(candidate.get("objects", [])))
+
+    for index, group in enumerate(groups, start=1):
+        group["event_id"] = f"{group.get('video_id', 'video')}:{float(group['start_s']):.3f}-{float(group['end_s']):.3f}"
+        group.pop("_action_ids", None)
+    groups.sort(key=lambda item: float(item.get("score", 0.0)), reverse=True)
+    return groups[:top_k]
 
 
 @dataclass(frozen=True)
@@ -561,11 +757,27 @@ class LearnedVideoIndex:
         vectors = np.load(path / "vectors.npy")
         return cls(vectors=vectors, records=records, model_id=str(metadata["model_id"]), model_revision=str(metadata["model_revision"]))
 
-    def search(self, query: np.ndarray, top_k: int = 8, *, diversify: bool = True) -> list[dict[str, object]]:
+    def search(
+        self,
+        query: np.ndarray,
+        top_k: int = 8,
+        *,
+        diversify: bool = True,
+        video_id: str | None = None,
+        action_names: set[str] | None = None,
+    ) -> list[dict[str, object]]:
         query = query / max(float(np.linalg.norm(query)), 1e-8)
         scores = self.vectors @ query
-        candidate_k = min(len(self.records), max(top_k * 4, top_k)) if diversify else top_k
-        order = np.argsort(-scores)[:candidate_k]
+        eligible = [
+            index for index, record in enumerate(self.records)
+            if (video_id is None or str(record.get("video_id", "")) == video_id)
+            and (action_names is None or _record_action_names(record) & action_names)
+        ]
+        if not eligible:
+            return []
+        candidate_k = min(len(eligible), max(top_k * 4, top_k)) if diversify else min(len(eligible), top_k)
+        ranked = sorted(eligible, key=lambda index: float(scores[index]), reverse=True)
+        order = ranked[:candidate_k]
         candidates = [{**self.records[int(index)], "score": round(float(scores[index]), 4), "retrieval_mode": "learned_temporal_clip"} for index in order]
         return diversify_video_results(candidates, top_k=top_k) if diversify else candidates
 
@@ -573,14 +785,118 @@ class LearnedVideoIndex:
 class LearnedVideoRetriever:
     """Lazy text-to-window adapter used by the API."""
 
-    def __init__(self, index: LearnedVideoIndex, *, device: str = "auto") -> None:
+    def __init__(self, index: LearnedVideoIndex, *, device: str = "auto", action_resolver: VideoActionResolver | None = None) -> None:
         from visual_memory_lab.encoder import ClipEncoder
 
         self.index = index
         self.encoder = ClipEncoder(device=device)
+        self._action_vectors: dict[str, np.ndarray] = {}
+        self.action_resolver = action_resolver
 
-    def search(self, query: str, *, top_k: int = 8) -> list[dict[str, object]]:
-        return self.index.search(self.encoder.encode_texts([query])[0], top_k=top_k)
+    @staticmethod
+    def _tokens(value: str) -> set[str]:
+        stop = {"a", "an", "the", "person", "someone", "some", "when", "did", "what", "is", "are", "was", "were", "to", "of", "on", "in", "with", "from", "then"}
+        tokens = {token for token in re.findall(r"[a-z0-9]+", value.lower()) if token not in stop and len(token) > 2}
+        expanded = set(tokens)
+        for token in tokens:
+            if token.endswith("ing") and len(token) > 5:
+                stem = token[:-3]
+                expanded.add(stem)
+                if len(stem) > 2 and stem[-1] == stem[-2]:
+                    expanded.add(stem[:-1])
+            elif token.endswith("ed") and len(token) > 4:
+                expanded.add(token[:-2])
+        return expanded
+
+    def _action_matches(self, query: str, records: list[dict[str, object]]) -> tuple[set[str], dict[str, object]]:
+        """Infer supported action labels from the selected recording.
+
+        The vocabulary comes from the recording itself; no fixed list of actions
+        is embedded in the application. Exact token overlap handles clear cases,
+        while CLIP similarity supplies a small synonym bridge (for example,
+        ``pick up a bag`` versus ``taking a bag from somewhere``).
+        """
+        labels = sorted({name for record in records for name in _record_action_names(record) if name})
+        if not labels:
+            return set(), {"status": "unsupported", "matched_actions": [], "reason": "recording has no annotated actions"}
+        query_tokens = self._tokens(query)
+        missing = [label for label in labels if label not in self._action_vectors]
+        if missing:
+            vectors = self.encoder.encode_texts([f"A person is {label.lower()}." for label in missing])
+            self._action_vectors.update({label: vector for label, vector in zip(missing, vectors, strict=True)})
+        query_vector = self.encoder.encode_texts([query])[0]
+        semantic_scores = sorted(
+            ((float(np.dot(query_vector, vector) / max(np.linalg.norm(query_vector) * np.linalg.norm(vector), 1e-8)), label) for label, vector in self._action_vectors.items()),
+            reverse=True,
+        )
+        shortlist = [label for _, label in semantic_scores[:5]]
+        if self.action_resolver is not None:
+            try:
+                resolved = self.action_resolver.resolve(query, labels, shortlist)
+                matched = set(str(value) for value in resolved.get("matched_action_names", [])) & set(labels)
+                if matched:
+                    return matched, {"status": "supported", "matched_actions": sorted(matched), "reason": str(resolved.get("reason", "")), "resolver": "llm", "cached": bool(resolved.get("cached", False))}
+                return set(), {"status": "unsupported", "matched_actions": [], "reason": str(resolved.get("reason", "no recorded action supports this question")), "resolver": "llm", "cached": bool(resolved.get("cached", False))}
+            except Exception:
+                # The deterministic path keeps local development and tests usable
+                # when the external resolver is unavailable.
+                pass
+        lexical: list[tuple[float, str]] = []
+        for label in labels:
+            label_tokens = self._tokens(label)
+            overlap = len(query_tokens & label_tokens)
+            coverage = overlap / max(1, len(query_tokens))
+            lexical.append((coverage, label))
+        lexical.sort(reverse=True)
+        best_coverage, best_label = lexical[0]
+        # A shared object/action term is enough when it is specific to one label.
+        # Otherwise use the learned CLIP text space to bridge synonyms.
+        if best_coverage > 0:
+            tied = {label for coverage, label in lexical if coverage == best_coverage and coverage > 0}
+            if len(tied) == 1 or best_coverage >= 0.5:
+                return tied, {"status": "supported", "matched_actions": sorted(tied), "reason": "recording action vocabulary matched the question"}
+        scores = sorted(
+            ((float(np.dot(query_vector, vector) / max(np.linalg.norm(query_vector) * np.linalg.norm(vector), 1e-8)), label) for label, vector in self._action_vectors.items()),
+            reverse=True,
+        )
+        if scores and scores[0][0] >= 0.25 and (len(scores) == 1 or scores[0][0] - scores[1][0] >= 0.015):
+            return {scores[0][1]}, {"status": "supported", "matched_actions": [scores[0][1]], "reason": "question matched a recording action in the learned text space"}
+        return set(), {"status": "unsupported", "matched_actions": [], "reason": "no recorded action supports this question"}
+
+    def search(self, query: str, *, top_k: int = 8, video_id: str | None = None) -> list[dict[str, object]]:
+        results, _ = self.search_with_metadata(query, top_k=top_k, video_id=video_id)
+        return results
+
+    def search_with_metadata(self, query: str, *, top_k: int = 8, video_id: str | None = None) -> tuple[list[dict[str, object]], dict[str, object]]:
+        query_vector = self.encoder.encode_texts([query])[0]
+        eligible = [record for record in self.index.records if video_id is None or str(record.get("video_id", "")) == video_id]
+        action_names, metadata = self._action_matches(query, eligible)
+        if metadata["status"] != "supported":
+            return [], metadata
+        results = self.index.search(query_vector, top_k=top_k, video_id=video_id, action_names=action_names)
+        if not results:
+            # The learned index is intentionally built from the training split.
+            # A user can still select a held-out recording in the catalogue, so
+            # do not turn a known annotation into a misleading "unsupported"
+            # answer merely because that recording has no learned vector yet.
+            # Return the matching catalogue windows as a transparent fallback;
+            # the UI still labels the result as annotation-backed evidence.
+            fallback = search_windows(
+                [record for record in eligible if _record_action_names(record) & action_names],
+                query,
+                top_k=top_k,
+            )
+            if fallback:
+                for item in fallback:
+                    item["retrieval_mode"] = "annotation_fallback_unindexed_recording"
+                return fallback, {
+                    "status": "supported",
+                    "matched_actions": sorted(action_names),
+                    "reason": "learned vectors are unavailable for this recording; matched annotated windows are shown",
+                    "fallback": True,
+                }
+            metadata = {"status": "unsupported", "matched_actions": sorted(action_names), "reason": "matched action has no retrievable evidence window"}
+        return results, metadata
 
 
 def write_index(vectors: np.ndarray, records: list[dict[str, object]], output: Path) -> dict[str, object]:

@@ -23,22 +23,18 @@ dependencies = [
     "uvicorn>=0.52.1",
 ]
 
-[project.optional-dependencies]
-cpu = ["torch>=2.7,<3", "torchvision>=0.28,<0.29"]
-cuda = ["torch>=2.7,<3", "torchvision>=0.28,<0.29"]
-
-[tool.uv]
-conflicts = [[{ extra = "cpu" }, { extra = "cuda" }]]
-
 [tool.uv.sources]
 torch = [
-    { index = "pytorch-cpu", extra = "cpu" },
-    { index = "pytorch-cu130", extra = "cuda" },
+    { index = "pytorch-cu130", marker = "sys_platform == 'win32'" },
+    { index = "pytorch-cpu", marker = "sys_platform != 'win32'" },
 ]
 torchvision = [
-    { index = "pytorch-cpu", extra = "cpu" },
-    { index = "pytorch-cu130", extra = "cuda" },
+    { index = "pytorch-cu130", marker = "sys_platform == 'win32'" },
+    { index = "pytorch-cpu", marker = "sys_platform != 'win32'" },
 ]
+
+[tool.uv]
+cache-dir = ".uv-cache"
 
 [[tool.uv.index]]
 name = "pytorch-cpu"

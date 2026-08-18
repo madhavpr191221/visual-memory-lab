@@ -177,6 +177,10 @@ def build_temporal_windows(
                     "actions": overlapping,
                     "objects": row.get("objects", []),
                     "description": row.get("description", ""),
+                    "script": row.get("script", ""),
+                    "scene": row.get("scene", ""),
+                    "subject": row.get("subject", ""),
+                    "duration_s": duration,
                 }
             )
             if end >= duration:

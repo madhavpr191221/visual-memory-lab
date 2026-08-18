@@ -48,19 +48,20 @@ flowchart LR
     A[MP4 videos] --> B[Dataset preparation]
     A2[Action labels / captions] --> B
     B --> C[Temporal windows\n4 s length, 2 s stride]
-    C --> D[Sample 8 ordered RGB frames]
+    C --> D[Sample 16 ordered RGB frames]
     D --> E[Frozen CLIP image encoder]
     E --> F[Frame embedding cache]
-    F --> G[Temporal encoder\nTransformer or temporal pooling]
-    G --> H[Window embedding\nand action scores]
+    F --> G[Three-head temporal encoder]
+    G --> H[Retrieval vector, action scores,\nboundary estimate]
     H --> I[Vector index]
     Q[User question] --> J[CLIP text encoder]
     J --> K[Query embedding]
     K --> I
-    I --> L[Ranked evidence windows]
+    I --> L[Ranked and grouped events]
     L --> M[FastAPI application]
     M --> N[Video memory UI]
-    N --> O[Video player, timestamp,\nannotation, confidence, limits]
+    N --> O[Timestamped playback and RGB evidence]
+    O -. optional .-> VLM[VLM answer with citations]
 ```
 
 There are two paths:
@@ -82,7 +83,7 @@ videos + labels
       ↓
 window manifest
       ↓
-8 RGB frames per window
+16 RGB frames per window in the learned pipeline
       ↓
 CLIP frame embeddings
       ↓
@@ -110,7 +111,8 @@ initial setting is:
 - window duration: (4) seconds;
 - new window every (2) seconds;
 - overlap between neighboring windows: (2) seconds;
-- sampled frames per window: (T=8).
+- sampled frames per window: (T=16) for the learned pipeline. The original
+  annotation baseline used eight frames and remains useful for comparison.
 
 If a video begins at time (0), the first windows are approximately
 
@@ -122,11 +124,11 @@ The overlap reduces boundary misses. An action beginning at 3.8 seconds is
 likely to appear in both the 0–4 second and 2–6 second windows instead of being
 split across only one badly timed clip.
 
-### Why eight frames?
+### Why sixteen frames in the learned pipeline?
 
-Eight is an engineering starting point, not a law. For a 4-second window, it is
-roughly one frame every half second, or about 2 frames per second. That is enough
-to preserve a coarse sequence such as:
+Sixteen is an engineering choice, not a law. For a 4-second window, it is
+roughly one frame every quarter second, or about 4 frames per second. That gives
+the temporal model more evidence for short actions such as:
 
 ```text
 hand approaches cup → hand grips cup → cup is lifted → person drinks
@@ -135,7 +137,7 @@ hand approaches cup → hand grips cup → cup is lifted → person drinks
 while keeping the first experiment small enough to run on a normal GPU. More
 frames improve fine timing but increase decoding, memory, and training cost.
 
-The system can later compare (T=8,16,32) using the same evaluation protocol.
+The system can still compare (T=8,16,32) using the same evaluation protocol.
 
 ## 4. Data model
 
@@ -198,11 +200,11 @@ The text does **not** get copied into each frame. The eight frames first become
 eight visual vectors:
 
 $$
-z_t = f_{\text{image}}(x_t), \qquad t=1,\ldots,T,
+\mathbf{z}_t=f_{\text{image}}(x_t),\qquad t=1,\ldots,T,
 $$
 
 where (x_t) is frame (t), (f_{\text{image}}) is the CLIP image encoder,
-and (z_t) is its embedding.
+and $\mathbf{z}_t$ is its embedding vector.
 
 For the example “sitting on a chair and drinking coffee,” the ordered sequence
 could be interpreted as:
@@ -218,8 +220,9 @@ frame 7: person drinks
 frame 8: cup moves away
 ```
 
-The annotation or caption describes the **window as a whole**. The temporal
-model learns from the order of the eight visual vectors which parts of the
+The annotation or caption describes the **window as a whole**. In the learned
+pipeline $T=16$; the eight-frame list above is only a compact illustration. The
+temporal model learns from the order of the visual vectors which parts of the
 window support that description.
 
 For finer timing, the future training data can include per-frame or per-subwindow
@@ -231,10 +234,10 @@ labels. That enables a second output such as “the action is most likely betwee
 The user’s text is encoded by the CLIP text encoder:
 
 $$
-q = f_{\text{text}}(r),
+\mathbf{q}=f_{\text{text}}(r),
 $$
 
-where (r) is the question or a normalized search phrase. For example:
+where $r$ is the question or a normalized search phrase. For example:
 
 ```text
 question: “When did the person open the door?”
@@ -255,41 +258,54 @@ all eight frames.
 
 ## 7. Learning a whole-window representation
 
-The temporal encoder receives the ordered frame embeddings:
+The temporal encoder receives the ordered frame vectors. Bold symbols denote
+vectors throughout this document:
 
 $$
-(h_1,\ldots,h_T) = g(z_1,\ldots,z_T),
+\mathbf{h}_1,\ldots,\mathbf{h}_T =
+g(\mathbf{z}_1,\ldots,\mathbf{z}_T),
 $$
 
-where (g) can initially be a small Transformer or temporal pooling block.
-After pooling, the window vector is
+where $g$ is the small Transformer or temporal pooling block. After pooling,
+the window vector is
 
 $$
-v_{\text{window}} =
-\operatorname{Normalize}\left(
-W_o\,\operatorname{Pool}(h_1,\ldots,h_T)
-\right).
+\mathbf{r}=\operatorname{Pool}(\mathbf{h}_1,\ldots,\mathbf{h}_T),
+\qquad
+\mathbf{v}_{\text{window}}=
+\operatorname{Normalize}(W_o\mathbf{r}).
 $$
 
-The model can have two outputs:
+The model has a retrieval output and task-specific outputs:
 
-1. (v_{\text{window}}): one vector for searching the entire four-second
+1. $\mathbf{v}_{\text{window}}$: one vector for searching the entire four-second
    window;
-2. (hat y_t): action scores for each frame or small temporal slice.
+2. action and boundary scores for the requested event.
+
+**Normalize** means divide a vector by its Euclidean length:
+
+$$
+\operatorname{Normalize}(\mathbf{x})
+=\frac{\mathbf{x}}{\lVert\mathbf{x}\rVert_2}.
+$$
+
+The result has length one. For the technician, this makes “opening a cabinet”
+compare by direction in the learned space rather than by the raw size of the
+stored vector.
 
 The first answers “which clip is relevant?” The second helps answer “when in
 that clip did it happen?”
 
 ## 8. Training objective
 
-For a batch of (B) video windows and their matching text descriptions, let
+For a batch of $B$ video windows and their matching text descriptions, let
 
 $$
-S_{ij} = \frac{v_i^\top q_j}{\tau}
+S_{ij}=\frac{\mathbf{v}_i^{\top}\mathbf{q}_j}{\tau}.
 $$
 
-be the scaled cosine similarity between video (i) and text (j), where
-(	au) is a temperature parameter.
+be the scaled cosine similarity between video $i$ and text $j$, where $\tau$ is
+a temperature parameter. Smaller $\tau$ makes ranking mistakes more costly.
 
 The symmetric contrastive loss is
 
@@ -304,13 +320,13 @@ $$
 In plain English: the correct description should be close to its own window
 and farther from other windows in the batch.
 
-If frame-level action labels (y_t) are available, add a binary classification
-loss:
+If action labels $\mathbf{y}_t$ are available for each temporal slice, add a
+multi-label classification loss:
 
 $$
 \mathcal{L}_{\text{action}} =
 \frac{1}{T}\sum_{t=1}^{T}
-\operatorname{BCE}(\hat y_t,y_t).
+\operatorname{BCE}(\hat{\mathbf{y}}_t,\mathbf{y}_t).
 $$
 
 The combined objective is
@@ -321,24 +337,93 @@ $$
  + \lambda\mathcal{L}_{\text{action}}.
 $$
 
-The parameter (lambda) controls how much the experiment values retrieval
+The parameter $\lambda$ controls how much the experiment values retrieval
 quality versus temporal action localization.
 
-## 9. Retrieval mathematics
+## 9. The three-head temporal model
 
-At query time, encode the question as (q), normalize it, and compare it with
-each stored window vector (v_j):
+The learned pipeline keeps CLIP frozen and trains a small temporal model on the
+ordered frame vectors. It has one shared temporal backbone and three outputs:
+
+1. **Retrieval head**: a normalized vector used to find relevant windows.
+2. **Action head**: one score per Charades action, because a window may contain
+   several actions at once.
+3. **Boundary head**: two normalized numbers estimating where the requested
+   action begins and ends inside the four-second window.
+
+For a window with hidden sequence
+$\mathbf{H}=(\mathbf{h}_1,\ldots,\mathbf{h}_T)$, the pooled representation is
+$\mathbf{r}=\operatorname{Pool}(\mathbf{H})$. The heads are:
 
 $$
-s(q,v_j) = q^\top v_j.
+\mathbf{v}=\operatorname{Normalize}(W_r\mathbf{r}),\qquad
+\hat{\mathbf{y}}=W_a\mathbf{r}+\mathbf{b}_a,\qquad
+\hat{\mathbf{b}}=\sigma(W_b\mathbf{r}+\mathbf{b}_b),
+$$
+
+where $\mathbf{v}$ is the retrieval vector, $\hat{\mathbf{y}}$ contains action
+logits, and $\hat{\mathbf{b}}=(\hat{s},\hat{e})$ contains normalized start and
+end estimates. The
+sigmoid keeps the boundary values between zero and one; they are converted back
+to seconds using $t_s+(t_e-t_s)\hat{s}$ and
+$t_s+(t_e-t_s)\hat{e}$.
+
+Charades action annotations provide the multi-label target
+\(\mathbf{y}\in\{0,1\}^C\).
+For the boundary target, the best-overlap annotated action is mapped into the
+window:
+
+$$
+s=\operatorname{clip}\left(\frac{a-t_s}{t_e-t_s},0,1\right),\qquad
+e=\operatorname{clip}\left(\frac{b-t_s}{t_e-t_s},0,1\right).
+$$
+
+The training objective is:
+
+$$
+\mathcal{L}=\mathcal{L}_{\mathrm{retrieval}}
+ +\lambda_a\mathcal{L}_{\mathrm{action}}
+ +\lambda_b\mathcal{L}_{\mathrm{boundary}},
+$$
+
+with binary cross-entropy for the multi-label action head and Smooth L1 for
+valid boundary targets. In plain English: the model learns what a window is
+about, which named actions are visible, and approximately where the strongest
+action occurs. It does **not** learn persistent object identity, depth, or a
+guarantee that an action occurred outside the recorded evidence.
+
+## 10. Event grouping and evidence intervals
+
+Retrieval produces overlapping four-second windows. Showing all of them would
+make one event look like many events, so the API groups windows from the same
+recording when their intervals overlap substantially or share the same action
+label. A grouped event stores its member window IDs and an event interval.
+
+The event interval is the model's refined action interval when boundary estimates
+are available. The **context interval** is wider and is used only for playback:
+
+$$
+I_{\mathrm{context}}=[\max(0,s-\delta),\ \min(T,e+\delta)],
+$$
+
+where $\delta=2$ seconds in the current UI. This lets a technician see what
+happened immediately before and after without changing the reported event time.
+
+## 11. Retrieval mathematics
+
+At query time, encode the question as a normalized vector $\mathbf{q}$ and
+compare it with each stored normalized window vector $\mathbf{v}_j$:
+
+$$
+s(\mathbf{q},\mathbf{v}_j)=\mathbf{q}^{\top}\mathbf{v}_j.
 $$
 
 Because both vectors are normalized, this dot product is cosine similarity.
-The top-(K) windows are
+The top-$K$ windows are
 
 $$
-\operatorname{TopK}(q) =
-\operatorname{argsort}_{j}\ s(q,v_j).
+\operatorname{TopK}(\mathbf{q})=
+\operatorname{argsort}_{j}\ s(\mathbf{q},\mathbf{v}_j).
 $$
 
 The result contains the video identifier and the time interval, so the UI can
@@ -349,7 +434,7 @@ The first implementation can use an exact flat index. Later experiments can
 compare HNSW, LSH, IVF, and product quantization without changing the user-facing
 question flow.
 
-## 10. Application flows
+## 12. Application flows
 
 ### A. Search the whole video archive
 
@@ -394,7 +479,7 @@ ask for manual confirmation when the result is ambiguous
 
 The system is an evidence finder, not an autonomous safety certifier.
 
-## 11. API and UI boundary
+## 13. API and UI boundary
 
 The application layer exposes a small interface:
 
@@ -422,7 +507,7 @@ The Video memory page presents the question box, candidate moments, playable
 clips, timestamps, and a short explanation. It should make clear whether the
 result came from annotation matching, learned retrieval, or both.
 
-## 12. Offline artifacts and reproducibility
+## 14. Offline artifacts and reproducibility
 
 The expensive and important intermediate outputs are saved explicitly:
 
@@ -459,28 +544,36 @@ run can continue with `--resume` without recomputing completed videos. PyAV
 decodes the compressed video on the CPU; the CLIP image and text encoders run on
 CUDA when available, with CPU fallback.
 
-### Full-run result
+### Full-run result: three-head checkpoint
 
 The full cache produced 18,994 windows from 1,300 videos with no failed video
-decodes. The training-only index contains 14,824 windows. On 4,170 held-out
-test queries, the run achieved:
+decodes. The three-head training-only index contains 14,824 windows. On 4,170
+held-out test queries, the run achieved:
 
 | Metric | Result |
 | --- | ---: |
-| Recall@1 | 0.6360 |
-| Recall@5 | 0.8746 |
-| Recall@10 | 0.9173 |
-| Mean temporal IoU | 0.258 |
-| Median temporal IoU | 0.200 |
-| Mean boundary error | 7.20 s |
-| Misses | 345 |
+| Recall@1 | 0.6763 |
+| Recall@5 | 0.9113 |
+| Recall@10 | 0.9321 |
+| Mean temporal IoU | 0.2598 |
+| Median temporal IoU | 0.1979 |
+| Mean boundary error | 7.23 s |
+| Median boundary error | 6.50 s |
+| Mean duplicate rate | 0.1650 |
+| Misses | 283 |
+
+For comparison, the earlier one-head checkpoint reached Recall@1 0.6360,
+Recall@5 0.8746, Recall@10 0.9173, and 345 misses. The three-head checkpoint
+improves retrieval recall and reduces misses in this run. Temporal IoU and
+boundary error change only slightly, so the boundary head is a useful first
+experiment rather than a production-quality localizer.
 
 The gap between retrieval recall and temporal IoU is important: the learned
 system usually retrieves a semantically relevant activity, but the current
 four-second windows are not precise enough to identify the exact action
 boundary.
 
-## 13. Evaluation that matters to the application
+## 15. Evaluation that matters to the application
 
 The primary question is not “did the loss go down?” It is “did the returned
 evidence contain the requested moment?”
@@ -507,7 +600,7 @@ Useful measures include:
 For a technician, a result that is second-ranked but within one second of the
 true action may be more useful than a visually similar clip from the wrong room.
 
-## 14. Failure boundaries
+## 16. Failure boundaries
 
 Every result needs a safe interpretation.
 
@@ -523,7 +616,7 @@ Every result needs a safe interpretation.
 The project should say what measurement exposed the problem instead of simply
 saying “the model failed.”
 
-## 15. Relationship to the office memory system
+## 17. Relationship to the office memory system
 
 The two datasets support different kinds of memory:
 
@@ -548,11 +641,11 @@ Depth and 3D are useful when the question depends on physical geometry—distanc
 occupancy, object relocation, or whether two views show the same place. They are
 not required for the first Charades action-search experiment.
 
-## 16. Future extensions
+## 18. Future extensions
 
 Once the baseline is understood, the project can grow in controlled steps:
 
-1. train the temporal encoder while keeping CLIP frozen;
+1. train retrieval, action, and boundary heads while keeping CLIP frozen;
 2. fine-tune the visual encoder on hard action negatives;
 3. compare 8, 16, and 32 frame sampling;
 4. add audio when sound carries operational evidence;
@@ -564,7 +657,7 @@ Once the baseline is understood, the project can grow in controlled steps:
 Each extension should preserve the same application contract: return evidence,
 show the time, explain the match, and state what the system cannot establish.
 
-## 17. Current status and boundary
+## 19. Current status and boundary
 
 Implemented now:
 
@@ -572,7 +665,8 @@ Implemented now:
 - 4-second windows with 2-second stride;
 - deterministic frame timestamp manifests;
 - cached frozen CLIP frame/text embeddings;
-- trainable temporal head and checkpoint export;
+- trainable temporal retrieval head and checkpoint export;
+- three-head temporal model for retrieval, multi-label action scoring, and boundary regression;
 - exact learned temporal index;
 - learned API retrieval with annotation-based fallback;
 - retrieval-mode labels in the Video memory UI;
@@ -584,10 +678,77 @@ Not implemented yet:
 
 - final CLIP vision-block fine-tuning from raw video;
 - VLM-generated Charades captions;
-- reliable frame-level action boundaries;
+- VLM-grounded video answer synthesis from sampled RGB evidence is now
+  available as an optional post-retrieval step;
+- reliable production-quality frame-level action boundaries;
 - audio, depth, or 3D fusion.
 
 That distinction is important in an interview. The current application is a
 working, evidence-linked temporal retrieval system with a frozen-CLIP training
-path. Fine-grained action boundaries and end-to-end vision fine-tuning remain
-separate experiments.
+path. The three-head model is a first learned localization experiment and must
+still be evaluated against the annotation baseline. The VLM explains selected
+evidence; it is not the source of temporal ground truth.
+
+## 20. VLM synthesis after retrieval
+
+The application separates event retrieval from answer writing. The learned
+temporal model identifies a candidate event and estimates its interval. The
+VLM receives a small set of timestamped RGB frames from that interval, the
+candidate action labels, and the evidence IDs. It then produces a readable
+answer with citations and limitations.
+
+The VLM does not search the whole recording, invent timestamps, or replace the
+event interval. If it is unavailable, the application falls back to the
+official Charades annotations and labels that answer as a dataset-grounded
+fallback.
+
+The application uses two synthesis moments:
+
+1. a short preview for the strongest retrieved event;
+2. a detailed explanation after the user selects an event.
+
+This keeps the technician-facing answer natural while preserving a traceable
+path from question to temporal event to RGB evidence.
+
+The synthesis endpoint is:
+
+```text
+POST /api/video-memory/synthesize
+```
+
+It receives a video ID, question, event interval, and evidence window IDs. The
+server samples six RGB frames from that interval and sends only those frames,
+the official action labels, and the evidence IDs to the VLM. The response must
+contain an answer, confidence, evidence citations, and limitations. If the API
+key is missing or the call fails, the request returns an annotation-grounded
+fallback rather than inventing an answer.
+
+### Rebuilding the learned artifacts
+
+The learned run can be rebuilt with sixteen frames per window:
+
+```powershell
+uv run visual-memory-lab build-charades-frames `
+  --manifest outputs/charades/learned/windows/windows.jsonl `
+  --output outputs/charades/learned/frames16 `
+  --frames-per-window 16
+
+uv run visual-memory-lab build-charades-video-cache `
+  --manifest outputs/charades/learned/frames16/frames.jsonl `
+  --output outputs/charades/learned/full16/cache `
+  --device cuda
+
+uv run visual-memory-lab train-charades-video `
+  --cache outputs/charades/learned/full16/cache `
+  --output outputs/charades/learned/full16/train `
+  --device cuda
+
+uv run visual-memory-lab index-charades-video `
+  --cache outputs/charades/learned/full16/cache `
+  --checkpoint outputs/charades/learned/full16/train/temporal_multitask.pt `
+  --output outputs/charades/learned/full16/index `
+  --device cuda
+```
+
+The index contains only training windows. Held-out windows remain available for
+evaluation and are never used to train the temporal heads.

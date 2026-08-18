@@ -36,11 +36,9 @@ function Header() {
           <NavLink to="/research/evidence">3D evidence</NavLink>
           <NavLink to="/research/associations">Associations</NavLink>
         </> : <>
-          <NavLink to="/app" end>Ask memory</NavLink>
-          <NavLink to="/app/inspect">Inspect</NavLink>
-          <NavLink to="/app/video">Video memory</NavLink>
-          <NavLink to="/app/inspections">History</NavLink>
-          <NavLink to="/app/video-history">Video findings</NavLink>
+          <NavLink to="/app" end>Video memory</NavLink>
+          <NavLink to="/app/video-history">Saved findings</NavLink>
+          <NavLink to="/archive/office">Office archive</NavLink>
           <NavLink to="/research" className={styles.workspaceLink}>Research</NavLink>
         </>}
       </nav>
@@ -56,7 +54,7 @@ export default function App() {
   return <Routes>
     <Route element={<Shell />}>
       <Route index element={<LandingPage />} />
-      <Route path="app" element={<HomePage />} />
+      <Route path="app" element={<VideoMemoryPage />} />
       <Route path="app/demo" element={<GuidedDemoPage />} />
       <Route path="app/objects" element={<ObjectsPage />} />
       <Route path="app/evidence" element={<RgbdEvidencePage />} />
@@ -65,6 +63,9 @@ export default function App() {
       <Route path="app/inspect" element={<InspectionPage />} />
       <Route path="app/video" element={<VideoMemoryPage />} />
       <Route path="app/video-history" element={<VideoHistoryPage />} />
+      <Route path="archive/office" element={<HomePage />} />
+      <Route path="archive/office/inspect" element={<InspectionPage />} />
+      <Route path="archive/office/history" element={<InspectionsPage />} />
       <Route path="app/inspections" element={<InspectionsPage />} />
       <Route path="app/inspections/:id" element={<InspectionDetailPage id={window.location.pathname.split("/").pop() ?? ""} />} />
       <Route path="research" element={<EvaluationPage />} />

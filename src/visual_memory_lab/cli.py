@@ -92,11 +92,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     learned = subparsers.add_parser(
         "build-charades-frames",
-        help="write deterministic eight-frame timestamps for learned Charades windows",
+        help="write deterministic frame timestamps for learned Charades windows",
     )
     learned.add_argument("--manifest", type=Path, required=True)
     learned.add_argument("--output", type=Path, required=True)
-    learned.add_argument("--frames-per-window", type=_positive_integer, default=8)
+    learned.add_argument("--frames-per-window", type=_positive_integer, default=16)
 
     cache = subparsers.add_parser(
         "build-charades-video-cache",
@@ -131,7 +131,7 @@ def build_parser() -> argparse.ArgumentParser:
     index_video.add_argument("--checkpoint", type=Path)
     index_video.add_argument("--output", type=Path, required=True)
     index_video.add_argument("--device", default="auto")
-    index_video.add_argument("--split", choices=("train", "test"), default="train")
+    index_video.add_argument("--split", choices=("train", "test", "all"), default="train")
 
     evaluate_video = subparsers.add_parser(
         "evaluate-charades-video",
@@ -838,3 +838,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             parser.error(str(error))
         print(f"Pseudo-audited {summary['reviewed_count']} association candidates")
     return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

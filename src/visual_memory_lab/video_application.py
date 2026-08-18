@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections import OrderedDict
+import json
 from typing import Iterable
 
 
@@ -28,14 +29,55 @@ def video_catalog(windows: Iterable[dict[str, object]]) -> list[dict[str, object
             catalog[video_id] = {
                 "video_id": video_id,
                 "video_url": f"/api/video-memory/videos/{video_id}",
-                "duration_s": max(float(item.get("end_s", 0.0)), 0.0),
+                "duration_s": max(float(item.get("duration_s", item.get("end_s", 0.0))), 0.0),
                 "description": str(item.get("description", "")),
+                "script": str(item.get("script", "")),
+                "scene": str(item.get("scene", "")),
+                "subject": str(item.get("subject", "")),
                 "objects": list(item.get("objects", [])),
+                "actions": [json.loads(value) for value in sorted({
+                    json.dumps(action, sort_keys=True)
+                    for action in item.get("actions", [])
+                    if isinstance(action, dict) and str(action.get("name", "")).strip()
+                })],
             }
         else:
             catalog[video_id]["duration_s"] = max(
-                float(catalog[video_id]["duration_s"]), float(item.get("end_s", 0.0))
+                float(catalog[video_id]["duration_s"]), float(item.get("duration_s", item.get("end_s", 0.0)))
             )
+            existing = {
+                json.dumps(action, sort_keys=True)
+                for action in catalog[video_id].get("actions", [])
+                if isinstance(action, dict)
+            }
+            existing |= {
+                json.dumps(action, sort_keys=True)
+                for action in item.get("actions", [])
+                if isinstance(action, dict) and str(action.get("name", "")).strip()
+            }
+            catalog[video_id]["actions"] = [json.loads(value) for value in sorted(existing)]
+            for field in ("script", "scene", "subject"):
+                if not catalog[video_id].get(field):
+                    catalog[video_id][field] = str(item.get(field, ""))
+            catalog[video_id]["objects"] = sorted(set(catalog[video_id].get("objects", [])) | set(item.get("objects", [])))
+    for item in catalog.values():
+        if item.get("actions") and isinstance(item["actions"][0], str):
+            item["actions"] = [json.loads(value) for value in item["actions"]]
+        actions = [action for action in item.get("actions", []) if isinstance(action, dict)]
+        overlap_groups: list[list[str]] = []
+        for action in actions:
+            overlaps = [
+                str(other.get("name", ""))
+                for other in actions
+                if other is not action
+                and float(other.get("start_s", 0.0)) < float(action.get("end_s", 0.0))
+                and float(other.get("end_s", 0.0)) > float(action.get("start_s", 0.0))
+            ]
+            if overlaps:
+                group = sorted(set([str(action.get("name", "")), *overlaps]))
+                if group not in overlap_groups:
+                    overlap_groups.append(group)
+        item["overlap_groups"] = overlap_groups
     return list(catalog.values())
 
 

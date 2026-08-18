@@ -6,7 +6,7 @@ from pathlib import Path
 import torch
 
 from visual_memory_lab.charades import build_temporal_windows, parse_actions, search_windows
-from visual_memory_lab.temporal import TemporalWindowEncoder, symmetric_contrastive_loss
+from visual_memory_lab.temporal import ThreeHeadTemporalModel, TemporalWindowEncoder, symmetric_contrastive_loss, three_head_loss
 
 
 def test_parse_actions_uses_human_readable_class_names() -> None:
@@ -58,3 +58,21 @@ def test_temporal_head_and_contrastive_loss_are_trainable() -> None:
     loss.backward()
     assert output.shape == (3, 8)
     assert model.input_projection.weight.grad is not None
+
+
+def test_three_head_temporal_model_produces_all_training_outputs() -> None:
+    model = ThreeHeadTemporalModel(8, 3, output_dim=8, max_frames=4)
+    frames = torch.randn(4, 4, 8)
+    outputs = model(frames)
+    loss, parts = three_head_loss(
+        outputs,
+        torch.randn(4, 8),
+        torch.zeros(4, 3),
+        torch.full((4, 2), 0.5),
+        torch.ones(4, dtype=torch.bool),
+    )
+    loss.backward()
+    assert outputs["retrieval"].shape == (4, 8)
+    assert outputs["action_logits"].shape == (4, 3)
+    assert outputs["boundary_logits"].shape == (4, 2)
+    assert set(parts) == {"retrieval", "action", "boundary"}

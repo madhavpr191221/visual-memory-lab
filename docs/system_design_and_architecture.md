@@ -1,8 +1,12 @@
-# Visual Memory Lab: Office System Design and Architecture
+# Visual Memory Lab: Video Memory System Design and Architecture
 
 ## 1. Purpose
 
-Visual Memory Lab is an evidence-first office and video inspection assistant. A technician can upload a current office photo, ask about a known office view, search prepared recordings for a moment, review a timestamped video timeline, and save a cautious finding.
+Visual Memory Lab is an evidence-first video memory assistant. A technician
+chooses a recording, asks a plain-language question, reviews a timestamped event
+with playable evidence, asks a follow-up, and saves a cautious finding. The main
+product is the video-memory workflow; the earlier office/image work is an
+archive and research surface rather than the primary user path.
 
 The system keeps four ideas separate:
 
@@ -10,44 +14,48 @@ The system keeps four ideas separate:
 retrieval → perception → association → interpretation
 ```
 
-Retrieval finds candidate images. Perception identifies visible regions. Association ranks whether regions from different visits could correspond. Interpretation explains the evidence and states what remains uncertain.
+Retrieval finds candidate video windows. Temporal localization groups overlapping
+windows and estimates the event interval. Evidence review shows playable RGB
+frames. Interpretation produces a bounded explanation and states what remains
+uncertain.
 
 ## 2. System at a glance
 
 ```mermaid
 flowchart LR
-    D[Office RGB/RGB-D recordings]
-    CV[Charades RGB videos + action intervals]
-    U[Uploaded current photo]
-    P[Offline preparation and perception]
-    A[Versioned local artifacts]
-    F[FastAPI resource loader]
-    API[Domain API]
-    L[Landing page /]
-    APP[Office assistant /app]
-    VM[Video memory /app/video]
-    R[Research workspace /research]
-    H[SQLite office + video history]
-    T[Technician]
-    E[Engineer or reviewer]
-    LLM[Optional selected-evidence VLM analysis]
+    V[Charades RGB videos]
+    ANN[Official action intervals and object labels]
+    PREP[Offline windows and frame timestamps]
+    CLIP[Frozen CLIP frame encoder]
+    TEMP[Three-head temporal model]
+    IDX[Training-only temporal index]
+    API[FastAPI video-memory API]
+    UI[Technician video-memory UI]
+    EVENT[Grouped event and boundary interval]
+    SAMPLE[Six timestamped RGB evidence frames]
+    VLM[Optional VLM synthesis]
+    FALL[Annotation-grounded fallback]
+    DB[SQLite saved findings]
+    RES[Research metrics and diagnostics]
 
-    D --> P --> A --> F --> API
-    CV --> P
-    U --> API
-    API --> L
-    L --> APP --> T
-    APP --> VM
-    L --> R --> E
-    APP --> H
-    API -. explicit selected-evidence action .-> LLM
-    LLM --> H
+    V --> PREP
+    ANN --> PREP
+    PREP --> CLIP --> TEMP --> IDX
+    ANN --> TEMP
+    IDX --> API --> UI
+    UI --> EVENT --> SAMPLE --> VLM
+    EVENT --> FALL
+    VLM --> UI
+    FALL --> UI
+    UI --> DB
+    IDX --> RES
 ```
 
 There is one backend and one set of prepared artifacts. The landing page presents two views of that system:
 
-- `/app` is the Office assistant. Its primary pages are Ask memory, Inspect, and History.
-- `/research` is a secondary validation view. It exposes retrieval evaluation, failure cases, zones, object masks, RGB-D evidence, and associations.
+- `/app` is the video memory application. It requires a recording before a time-based question can be asked.
+- `/archive/office` keeps the earlier office/image workflows available without placing them in the main user path.
+- `/research` is a secondary validation view. It exposes video retrieval evaluation plus the archived office/image diagnostics.
 
 The browser does not run CLIP indexing, object detection, segmentation, or RGB-D processing during ordinary page loads. Those jobs run offline. The UI reads their outputs through the API.
 
@@ -59,7 +67,45 @@ falls back to annotation-based lexical search and labels the result honestly.
 
 The guided showcase at `/app/demo` is a presentation layer over the same API. It selects a deterministic office question and two real retrieved views so a reviewer can understand the system in roughly 90 seconds without configuring a query first.
 
-## 3. End-to-end technician flow
+## 3. Canonical video-memory flow
+
+```text
+technician selects a recording
+          ↓
+asks: “When did the person open the cabinet?”
+          ↓
+CLIP text embedding searches the learned temporal index
+          ↓
+action scores and boundary head refine the best windows
+          ↓
+overlapping windows are grouped into distinct events
+          ↓
+the UI shows the event time plus a wider playback context
+          ↓
+six RGB frames are sampled for optional VLM explanation
+          ↓
+answer cites evidence, confidence, and limitations
+          ↓
+technician confirms, rejects, or saves a finding
+```
+
+For a four-second window $[t_s,t_e]$, the boundary head predicts normalized
+coordinates $(\hat{s},\hat{e})$. The event interval is:
+
+$$
+I_e=[t_s+(t_e-t_s)\hat{s},\ t_s+(t_e-t_s)\hat{e}].
+$$
+
+The player adds two seconds of context on either side:
+
+$$
+I_c=[\max(0,s-2),\ \min(T,e+2)].
+$$
+
+The VLM sees only the selected event's sampled frames and official metadata. It
+does not search the archive and does not create the temporal ground truth.
+
+## Archived office and research surfaces
 
 ```text
 current question or uploaded photo
@@ -419,6 +465,7 @@ GET  /api/video-memory
 GET  /api/video-memory/catalog
 POST /api/video-memory/summarize
 POST /api/video-memory/follow-up
+POST /api/video-memory/synthesize
 POST /api/video-memory/findings
 GET  /api/video-memory/findings
 GET  /api/video-memory/findings/{finding_id}
@@ -498,3 +545,47 @@ data.
 6. Make uncertainty visible to the user.
 7. Do not claim more than the dataset can establish.
 8. Add complexity only when a measured failure requires it.
+
+## 15. Learned video retrieval and answer synthesis
+
+The current video path is deliberately two-stage. First, the learned temporal
+index finds and refines evidence. Second, an optional VLM explains only that
+selected evidence.
+
+```text
+question
+  → CLIP text embedding
+  → learned temporal index
+  → action scores + boundary estimate
+  → group overlapping windows into one event
+  → sample six RGB frames from the event
+  → VLM answer with citations and limitations
+  → annotation fallback when cloud analysis is unavailable
+```
+
+For a four-second window $[t_s,t_e]$, the temporal model produces a normalized
+boundary $(\hat{s},\hat{e})$. The event interval is:
+
+$$
+I_e=[t_s+(t_e-t_s)\hat{s},\ t_s+(t_e-t_s)\hat{e}].
+$$
+
+The browser plays a little context around it:
+
+$$
+I_c=[\max(0,s-\delta),\ \min(T,e+\delta)],\qquad \delta=2\text{ s}.
+$$
+
+The three-head model is trained with:
+
+$$
+\mathcal{L}=\mathcal{L}_{\mathrm{retrieval}}
+ +\lambda_a\mathcal{L}_{\mathrm{action}}
+ +\lambda_b\mathcal{L}_{\mathrm{boundary}}.
+$$
+
+Official Charades action intervals supervise these targets; they are not
+generated by the VLM. The VLM is a bounded language layer: it may describe what
+is visible in the six supplied frames, cite their evidence IDs, and acknowledge
+uncertainty. It may not search the full archive, invent a timestamp, or turn a
+similar-looking clip into proof of an event.

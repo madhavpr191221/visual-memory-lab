@@ -17,6 +17,7 @@ import type {
   VideoCatalogResponse,
   VideoSummary,
   VideoFollowUp,
+  VideoGroundedAnswer,
   VideoFinding,
 } from "./types";
 
@@ -47,10 +48,11 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
 
 export const api = {
   guidedDemo: () => request<GuidedDemo>("/api/guided-demo"),
-  videoMemory: (query: string) => request<VideoMemoryResponse>(`/api/video-memory?q=${encodeURIComponent(query)}`),
+  videoMemory: (query: string, videoId: string) => request<VideoMemoryResponse>(`/api/video-memory?q=${encodeURIComponent(query)}&video_id=${encodeURIComponent(videoId)}`),
   videoCatalog: () => request<VideoCatalogResponse>("/api/video-memory/catalog"),
   summarizeVideo: (videoId: string) => request<VideoSummary>("/api/video-memory/summarize", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ video_id: videoId }) }),
   videoFollowUp: (videoId: string, question: string, startS: number, endS: number) => request<VideoFollowUp>("/api/video-memory/follow-up", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ video_id: videoId, question, start_s: startS, end_s: endS }) }),
+  synthesizeVideo: (payload: { video_id: string; question: string; event_label: string; start_s: number; end_s: number; evidence_window_ids: string[]; mode: "preview" | "detailed" }) => request<VideoGroundedAnswer>("/api/video-memory/synthesize", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) }),
   videoFindings: () => request<VideoFinding[]>("/api/video-memory/findings"),
   createVideoFinding: (payload: Omit<VideoFinding, "id" | "created_at">) => request<VideoFinding>("/api/video-memory/findings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) }),
   videoFinding: (id: string) => request<VideoFinding>(`/api/video-memory/findings/${encodeURIComponent(id)}`),

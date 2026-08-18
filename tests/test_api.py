@@ -88,7 +88,14 @@ def test_video_memory_search_returns_timestamped_windows(tmp_path: Path) -> None
     with TestClient(create_app(AppConfig(web_dist=tmp_path / "missing"), resources=resources)) as client:
         response = client.get("/api/video-memory", params={"q": "open door"})
         assert response.status_code == 200
-        assert response.json()["results"][0]["video_url"].endswith("/ABC12")
+        result = response.json()["results"][0]
+        assert result["video_url"].endswith("/ABC12")
+        assert result["primary_action"] == "Opening a door"
+        assert result["recorded_action"]["label"] == "Opening a door"
+        assert "annotation" in result["recorded_action"]["note"]
+        scoped = client.get("/api/video-memory", params={"q": "open door", "video_id": "MISSING"})
+        assert scoped.status_code == 200
+        assert scoped.json()["results"] == []
 
 
 def test_video_summary_and_follow_up_are_evidence_scoped(tmp_path: Path) -> None:
