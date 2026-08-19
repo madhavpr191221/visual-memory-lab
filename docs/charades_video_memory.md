@@ -578,3 +578,90 @@ audio understanding, true frame-level segmentation, or production-grade event
 boundaries. Those are separate extensions. The current contribution is a
 reproducible path from official video annotations to learned temporal retrieval,
 with explicit tensor contracts, evidence provenance, and held-out metrics.
+
+## 11. Phase 12: frame-level temporal evidence
+
+The earlier three-head model predicted one start and one end value from the
+pooled four-second window. Phase 12 adds a small evidence head to the same
+temporal encoder. CLIP remains frozen; only the temporal model is trained.
+
+For each sampled frame embedding $\mathbf{x}_{i,j}$, the encoder produces a
+hidden vector $\mathbf{h}_{i,j}$. A linear head predicts relevance, start
+proximity, and end proximity:
+
+$$
+\mathbf{z}_{i,j}=W_f\mathbf{h}_{i,j}+\mathbf{b}_f\in\mathbb{R}^3.
+$$
+
+The labels come from the official action interval. A frame inside the interval
+gets relevance label $1$; the closest sampled frame to each boundary gets the
+corresponding boundary label $1$. The extra loss is:
+
+$$
+\mathcal{L}_{frame}=\mathrm{BCEWithLogits}(\mathbf{z},\mathbf{y}).
+$$
+
+The Phase 12 objective is:
+
+$$
+\mathcal{L}=\mathcal{L}_{retrieval}+\lambda_a\mathcal{L}_{action}
++\lambda_b(\mathcal{L}_{boundary}+\mathcal{L}_{frame}).
+$$
+
+At indexing time, frame probabilities become timestamps using weighted
+averages. If $p^s_j$ and $p^e_j$ are the start and end probabilities at
+timestamp $t_j$:
+
+$$
+\hat{s}=\frac{\sum_jt_jp^s_j}{\sum_jp^s_j},\qquad
+\hat{e}=\frac{\sum_jt_jp^e_j}{\sum_jp^e_j}.
+$$
+
+The estimates are clamped to the retrieved window. If they are invalid, the
+pooled boundary estimate is retained. This is interval refinement, not object
+tracking and not proof that every frame visibly proves the action.
+
+The UI keeps three intervals separate:
+
+| Field | Meaning |
+| --- | --- |
+| Matched action interval | The refined interval used for review |
+| Dataset annotation | The official Charades interval used for supervision |
+| Context shown | A padded playable interval, currently two seconds on either side |
+
+For example, “holding a laptop” may produce a refined interval of $0.8$--$6.9$
+seconds, an official annotation of $0.6$--$7.8$ seconds, and a context clip of
+$0.0$--$9.8$ seconds. The user can distinguish the model’s localization from
+the annotation and from extra playback context. The index also stores sampled
+timestamps and refinement confidence for later frame-strip review.
+
+Phase 12 does not add audio, depth, persistent object identity, or VLM-generated
+labels. It improves temporal evidence while preserving the frozen-CLIP baseline
+for comparison.
+
+### Phase 12 status and metrics
+
+The Phase 12 implementation is present on the `phase/12-trustworthy-temporal-evidence`
+branch, but its experiment artifacts have not yet been generated. In practical
+terms, the new frame-refinement head has been coded and tested for shape,
+training, checkpoint loading, API propagation, and UI compilation. We have not
+yet run the full Phase 12 training job, built its refined index, or evaluated it
+on the held-out queries.
+
+Therefore, the metrics reported earlier in this document and in the README are
+Phase 11 baseline metrics. They must not be described as Phase 12 results. The
+Phase 12 comparison will be reported only after these files exist:
+
+```text
+outputs/phase12/frames16/training/summary.json
+outputs/phase12/frames16/training/history.jsonl
+outputs/phase12/frames16/index/summary.json
+outputs/phase12/frames16/evaluation/metrics.json
+```
+
+The comparison will use the same held-out test queries and report Recall@1,
+Recall@5, Recall@10, temporal IoU, start/end boundary error, duplicate-window
+rate, and unsupported-query behavior. Until then, the correct claim is:
+
+> Phase 12 adds a tested frame-level temporal refinement method; its numerical
+> improvement over the Phase 11 baseline is not yet measured.

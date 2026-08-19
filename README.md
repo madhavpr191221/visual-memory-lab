@@ -78,6 +78,12 @@ three-head temporal model, and a held-out test set:
 These results show strong top-k retrieval but coarse temporal boundaries. They
 are an honest research baseline, not a production timestamp guarantee.
 
+The Phase 12 frame-refinement implementation is currently on the
+`phase/12-trustworthy-temporal-evidence` branch. Its code and methodology are
+documented, but its full training, refined-index, and held-out evaluation
+artifacts have not yet been generated. The metrics above are Phase 11 baseline
+numbers, not Phase 12 results.
+
 ## Run the application
 
 The project uses Python 3.13 and `uv`.

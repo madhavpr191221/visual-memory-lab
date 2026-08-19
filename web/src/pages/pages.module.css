@@ -146,6 +146,10 @@
 .frameGrid a { color: var(--ink); text-decoration: none; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
 .frameGrid img { width: 100%; aspect-ratio: 16/9; object-fit: cover; display: block; }
 .frameGrid span { display: block; padding: 7px 9px; font-size: 11px; color: var(--muted); }
+.frameStrip { display: grid; grid-template-columns: repeat(auto-fit, minmax(84px, 1fr)); gap: 6px; padding: 10px 14px; background: var(--surface-2); }
+.frameStrip figure { margin: 0; min-width: 0; }
+.frameStrip img { display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: 6px; }
+.frameStrip figcaption { margin-top: 3px; color: var(--muted); font-size: 10px; text-align: center; }
 .compareGrid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 16px 0; }
 .changeFigure { overflow: hidden; margin: 0; }
 .changeFigure img { width: 100%; display: block; background: white; }

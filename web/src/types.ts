@@ -26,6 +26,13 @@ export interface VideoMemoryWindow {
   context_end_s?: number;
   action_start_s?: number;
   action_end_s?: number;
+  annotation_start_s?: number;
+  annotation_end_s?: number;
+  refined_start_s?: number;
+  refined_end_s?: number;
+  refinement_confidence?: number;
+  frame_timestamps_s?: number[];
+  interval_source?: "temporal_refinement" | "dataset_annotation";
   evidence_start_s?: number;
   evidence_end_s?: number;
   score?: number;

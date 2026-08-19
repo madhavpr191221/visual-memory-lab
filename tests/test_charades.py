@@ -75,4 +75,5 @@ def test_three_head_temporal_model_produces_all_training_outputs() -> None:
     assert outputs["retrieval"].shape == (4, 8)
     assert outputs["action_logits"].shape == (4, 3)
     assert outputs["boundary_logits"].shape == (4, 2)
-    assert set(parts) == {"retrieval", "action", "boundary"}
+    assert set(parts) == {"retrieval", "action", "boundary", "frame_refinement"}
+    assert outputs["frame_refinement_logits"].shape == (4, 4, 3)

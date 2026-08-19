@@ -16,6 +16,11 @@ type SelectedEvidence = {
   contextActions?: string[];
   recordedAction?: VideoMemoryWindow["recorded_action"];
   resultLimitations?: string[];
+  annotationStart?: number;
+  annotationEnd?: number;
+  refinementConfidence?: number;
+  intervalSource?: VideoMemoryWindow["interval_source"];
+  frameTimestamps?: number[];
   ids: string[];
 };
 
@@ -213,12 +218,17 @@ function SearchResults({ result, selected, choose, synthesis, synthesisLoading }
         const actionEnd = item.action_end_s ?? item.recorded_action?.end_s ?? item.end_s;
         const contextStart = item.context_start_s ?? item.start_s;
         const contextEnd = item.context_end_s ?? item.end_s;
-        return <article className={`panel ${styles.evidenceCard} ${isSelected ? styles.selectedEvidence : ""}`} key={item.event_id ?? item.window_id} onClick={() => choose({ videoId: item.video_id, start: actionStart, end: actionEnd, contextStart, contextEnd, label, contextActions: item.context_actions, recordedAction: item.recorded_action, resultLimitations: item.result_limitations, ids: evidenceIds })}>
+        return <article className={`panel ${styles.evidenceCard} ${isSelected ? styles.selectedEvidence : ""}`} key={item.event_id ?? item.window_id} onClick={() => choose({ videoId: item.video_id, start: actionStart, end: actionEnd, contextStart, contextEnd, label, contextActions: item.context_actions, recordedAction: item.recorded_action, resultLimitations: item.result_limitations, annotationStart: item.annotation_start_s, annotationEnd: item.annotation_end_s, refinementConfidence: item.refinement_confidence, intervalSource: item.interval_source, frameTimestamps: item.frame_timestamps_s, ids: evidenceIds })}>
         {item.video_url && <video controls preload="metadata" src={`${item.video_url}#t=${contextStart},${contextEnd}`} onClick={(event) => event.stopPropagation()} />}
+        {item.frame_timestamps_s?.length ? <FrameStrip videoId={item.video_id} label={label} timestamps={item.frame_timestamps_s} /> : null}
         <div className={styles.evidenceBody}><div className={styles.evidenceTop}><span className={styles.rank}>{item.video_id}</span><span className={styles.score}>Action {actionStart.toFixed(1)}–{actionEnd.toFixed(1)} s</span></div><h3>{label}</h3><div className={styles.evidenceRows}><p><strong>Matched action interval</strong><span>{actionStart.toFixed(1)}–{actionEnd.toFixed(1)} s</span></p><p><strong>Context shown</strong><span>{contextStart.toFixed(1)}–{contextEnd.toFixed(1)} s</span></p><p><strong>Annotation note</strong><span>{item.recorded_action?.note || "Dataset annotation; not independent visual proof."}</span></p><p><strong>Visual review</strong><span>{isSelected && synthesis ? (synthesis.visible_evidence || synthesis.answer) : "Select this event to inspect sampled frames."}</span></p></div>{item.context_actions?.length ? <small><strong>Overlapping context:</strong> {item.context_actions.join(" · ")}</small> : null}{item.objects.length > 0 && <small>Associated objects: {item.objects.join(" · ")}</small>}</div>
       </article>;
     })}</div>}
   </section>;
+}
+
+function FrameStrip({ videoId, label, timestamps }: { videoId: string; label: string; timestamps: number[] }) {
+  return <div className={styles.frameStrip} aria-label="Sampled evidence frames">{timestamps.map((timestamp) => <figure key={timestamp}><img src={`/api/video-memory/frame/${videoId}?timestamp_s=${timestamp}`} alt={`${label} at ${timestamp.toFixed(1)} seconds`} /><figcaption>{timestamp.toFixed(1)} s</figcaption></figure>)}</div>;
 }
 
 function TimelineReview({ summary, choose }: { summary: VideoSummary; choose: (item: SelectedEvidence) => void }) {

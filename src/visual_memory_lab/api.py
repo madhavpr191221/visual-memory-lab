@@ -337,8 +337,18 @@ def create_app(
             }
             # Keep three intervals distinct: the exact annotation, the
             # retrieved/index window, and the padded playback context.
-            result["action_start_s"] = float(result["recorded_action"]["start_s"])
-            result["action_end_s"] = float(result["recorded_action"]["end_s"])
+            result["annotation_start_s"] = float(result["recorded_action"]["start_s"])
+            result["annotation_end_s"] = float(result["recorded_action"]["end_s"])
+            refined_start = result.get("refined_start_s", result.get("predicted_start_s"))
+            refined_end = result.get("refined_end_s", result.get("predicted_end_s"))
+            has_refined_interval = refined_start is not None and refined_end is not None
+            result["action_start_s"] = float(refined_start) if has_refined_interval else result["annotation_start_s"]
+            result["action_end_s"] = float(refined_end) if has_refined_interval else result["annotation_end_s"]
+            result["interval_source"] = "temporal_refinement" if has_refined_interval else "dataset_annotation"
+            if result.get("frame_timestamps_s"):
+                result["frame_timestamps_s"] = [float(value) for value in result["frame_timestamps_s"]]
+            if result.get("refinement_confidence") is not None:
+                result["refinement_confidence"] = float(result["refinement_confidence"])
             result["evidence_start_s"] = float(result.get("context_start_s", result.get("start_s", 0.0)))
             result["evidence_end_s"] = float(result.get("context_end_s", result.get("end_s", 0.0)))
             duration_s = max(
@@ -355,8 +365,13 @@ def create_app(
                 result["recorded_action"]["start_s"],
                 min(float(result["recorded_action"]["end_s"]), duration_s),
             )
-            result["action_start_s"] = result["recorded_action"]["start_s"]
-            result["action_end_s"] = result["recorded_action"]["end_s"]
+            if not has_refined_interval:
+                result["action_start_s"] = result["recorded_action"]["start_s"]
+                result["action_end_s"] = result["recorded_action"]["end_s"]
+            result["action_start_s"] = max(0.0, min(float(result["action_start_s"]), duration_s))
+            result["action_end_s"] = max(
+                result["action_start_s"], min(float(result["action_end_s"]), duration_s)
+            )
             context = context_interval(
                 result["action_start_s"], result["action_end_s"], duration_s, padding_s=2.0
             )
