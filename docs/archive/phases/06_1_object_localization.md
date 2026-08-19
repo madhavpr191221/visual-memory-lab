@@ -224,7 +224,7 @@ unsupported. For predictions with detector score at least 0.35, the
 pseudo-support rate was 63.8%. Because the judge is not human ground truth,
 this is a diagnostic result—not detector accuracy. The frozen counts and audit
 boundary are recorded in
-[`artifacts/phase6b1/summary.json`](../../artifacts/phase6b1/summary.json).
+[`artifacts/phase6b1/summary.json`](../../../artifacts/phase6b1/summary.json).
 
 ## VLM pseudo-audit
 

@@ -163,5 +163,5 @@ The tests cover local search contracts, upload validation, allowlisted image ser
 
 The interface presents results derived from Microsoft Research's 7-Scenes
 dataset and uses OpenAI CLIP ViT-B/32. See the repository
-[Third-Party Notices](../../THIRD_PARTY_NOTICES.md) for the non-commercial
+[Third-Party Notices](../../../THIRD_PARTY_NOTICES.md) for the non-commercial
 dataset terms, original 7-Scenes paper, CLIP paper, code license, and model card.

@@ -114,7 +114,7 @@ Implemented. See
 
 The current acceptance artifact contains 384 keyframes and 1,417 retained
 predictions. The complete measured counts are kept in
-[`artifacts/phase6b1/summary.json`](../../artifacts/phase6b1/summary.json).
+[`artifacts/phase6b1/summary.json`](../../../artifacts/phase6b1/summary.json).
 
 ## Phase 6.1.2 — RGB-D object evidence
 

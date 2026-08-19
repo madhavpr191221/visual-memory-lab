@@ -895,4 +895,4 @@ Future work should follow these rules:
 - Microsoft Research, [RGB-D Dataset 7-Scenes](https://www.microsoft.com/en-us/research/project/rgb-d-dataset-7-scenes/).
 - Jamie Shotton et al., [Scene Coordinate Regression Forests for Camera Relocalization in RGB-D Images](https://www.microsoft.com/en-us/research/publication/scene-coordinate-regression-forests-for-camera-relocalization-in-rgb-d-images-2/), CVPR 2013.
 - Alec Radford et al., [Learning Transferable Visual Models From Natural Language Supervision](https://proceedings.mlr.press/v139/radford21a.html), ICML 2021.
-- [Phase 5: Cross-Traversal Revisit Memory](phases/05_cross_traversal_memory.md).
+- [Phase 5: Cross-Traversal Revisit Memory](../phases/05_cross_traversal_memory.md).

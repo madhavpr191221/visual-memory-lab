@@ -472,4 +472,4 @@ CLIP attribution:
 
 See the [CLIP paper](https://proceedings.mlr.press/v139/radford21a.html),
 [official repository](https://github.com/openai/CLIP), and this project's
-[Third-Party Notices](../../THIRD_PARTY_NOTICES.md).
+[Third-Party Notices](../../../THIRD_PARTY_NOTICES.md).

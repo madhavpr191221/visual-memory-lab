@@ -121,6 +121,8 @@ def build_parser() -> argparse.ArgumentParser:
     train_video.add_argument("--batch-size", type=_positive_integer, default=32)
     train_video.add_argument("--learning-rate", type=_positive_float, default=1e-4)
     train_video.add_argument("--finetune-vision-blocks", type=_non_negative_integer, default=0)
+    train_video.add_argument("--action-weight", type=_positive_float, default=1.0)
+    train_video.add_argument("--boundary-weight", type=_positive_float, default=2.0)
     train_video.add_argument("--split", choices=("train", "test"), default="train")
 
     index_video = subparsers.add_parser(
@@ -141,6 +143,13 @@ def build_parser() -> argparse.ArgumentParser:
     evaluate_video.add_argument("--test-manifest", type=Path, required=True)
     evaluate_video.add_argument("--output", type=Path, required=True)
     evaluate_video.add_argument("--device", default="auto")
+
+    multimodal = subparsers.add_parser(
+        "audit-multimodal-manifest",
+        help="validate a multimodal JSONL manifest and report available sensors",
+    )
+    multimodal.add_argument("--input", type=Path, required=True)
+    multimodal.add_argument("--output", type=Path, required=True)
 
     zones = subparsers.add_parser(
         "label-zones",
@@ -537,6 +546,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 batch_size=args.batch_size,
                 learning_rate=args.learning_rate,
                 split=args.split,
+                action_weight=args.action_weight,
+                boundary_weight=args.boundary_weight,
             )
         except (FileExistsError, OSError, RuntimeError, ValueError) as error:
             parser.error(str(error))
@@ -572,6 +583,21 @@ def main(argv: Sequence[str] | None = None) -> int:
             f"Recall@1={metrics['recall_at_k']['1']:.4f}, "
             f"Recall@5={metrics['recall_at_k']['5']:.4f}, "
             f"Recall@10={metrics['recall_at_k']['10']:.4f} in {args.output.resolve()}"
+        )
+    elif args.command == "audit-multimodal-manifest":
+        from visual_memory_lab.multimodal import audit_records, load_records
+
+        try:
+            records = load_records(args.input)
+            summary = audit_records(records)
+            args.output.parent.mkdir(parents=True, exist_ok=True)
+            args.output.write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
+        except (OSError, ValueError) as error:
+            parser.error(str(error))
+        print(
+            f"Audited {summary['record_count']} recordings; "
+            f"{summary['all_modalities_count']} contain RGB, audio, depth, and pose "
+            f"in {args.output.resolve()}"
         )
     elif args.command == "label-zones":
         from visual_memory_lab.zone_labeling import label_zones

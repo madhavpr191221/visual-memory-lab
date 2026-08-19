@@ -1,5 +1,21 @@
 # Phase 10 — Learned video memory: application, architecture, and mathematics
 
+> **Current implementation note.** Phase 10 introduced the learned Charades
+> video-memory architecture. The implementation-grounded details now live in
+> [Charades video memory](../../charades_video_memory.md). The current reference
+> artifact uses 16 RGB samples per four-second window, while the earlier
+> eight-frame artifacts remain historical comparisons. Phase 11 added the
+> weighted boundary objective and the current held-out evaluation.
+
+Current reference outputs:
+
+```text
+outputs/phase11/frames16/cache-v2
+outputs/phase11/frames16/training
+outputs/phase11/frames16/index
+outputs/phase11/frames16/evaluation/metrics.json
+```
+
 This document describes the next version of Visual Memory Lab: a system that can
 search a collection of videos for a **moment**, not just for a similar still
 image. It is written from the application outward. The research components are
@@ -270,10 +286,10 @@ where $g$ is the small Transformer or temporal pooling block. After pooling,
 the window vector is
 
 $$
-\mathbf{r}=\operatorname{Pool}(\mathbf{h}_1,\ldots,\mathbf{h}_T),
+\mathbf{r}=\mathrm{Pool}(\mathbf{h}_1,\ldots,\mathbf{h}_T),
 \qquad
 \mathbf{v}_{\text{window}}=
-\operatorname{Normalize}(W_o\mathbf{r}).
+\mathrm{Normalize}(W_o\mathbf{r}).
 $$
 
 The model has a retrieval output and task-specific outputs:
@@ -285,7 +301,7 @@ The model has a retrieval output and task-specific outputs:
 **Normalize** means divide a vector by its Euclidean length:
 
 $$
-\operatorname{Normalize}(\mathbf{x})
+\mathrm{Normalize}(\mathbf{x})
 =\frac{\mathbf{x}}{\lVert\mathbf{x}\rVert_2}.
 $$
 
@@ -312,8 +328,8 @@ The symmetric contrastive loss is
 $$
 \mathcal{L}_{\text{contrastive}} =
 \frac{1}{2}\left[
-\operatorname{CE}(S,\text{video-to-text targets})+
-\operatorname{CE}(S^\top,\text{text-to-video targets})
+\mathrm{CE}(S,\text{video-to-text targets})+
+\mathrm{CE}(S^\top,\text{text-to-video targets})
 \right].
 $$
 
@@ -326,7 +342,7 @@ multi-label classification loss:
 $$
 \mathcal{L}_{\text{action}} =
 \frac{1}{T}\sum_{t=1}^{T}
-\operatorname{BCE}(\hat{\mathbf{y}}_t,\mathbf{y}_t).
+\mathrm{BCE}(\hat{\mathbf{y}}_t,\mathbf{y}_t).
 $$
 
 The combined objective is
@@ -353,10 +369,10 @@ ordered frame vectors. It has one shared temporal backbone and three outputs:
 
 For a window with hidden sequence
 $\mathbf{H}=(\mathbf{h}_1,\ldots,\mathbf{h}_T)$, the pooled representation is
-$\mathbf{r}=\operatorname{Pool}(\mathbf{H})$. The heads are:
+$\mathbf{r}=\mathrm{Pool}(\mathbf{H})$. The heads are:
 
 $$
-\mathbf{v}=\operatorname{Normalize}(W_r\mathbf{r}),\qquad
+\mathbf{v}=\mathrm{Normalize}(W_r\mathbf{r}),\qquad
 \hat{\mathbf{y}}=W_a\mathbf{r}+\mathbf{b}_a,\qquad
 \hat{\mathbf{b}}=\sigma(W_b\mathbf{r}+\mathbf{b}_b),
 $$
@@ -374,8 +390,8 @@ For the boundary target, the best-overlap annotated action is mapped into the
 window:
 
 $$
-s=\operatorname{clip}\left(\frac{a-t_s}{t_e-t_s},0,1\right),\qquad
-e=\operatorname{clip}\left(\frac{b-t_s}{t_e-t_s},0,1\right).
+s=\mathrm{clip}\left(\frac{a-t_s}{t_e-t_s},0,1\right),\qquad
+e=\mathrm{clip}\left(\frac{b-t_s}{t_e-t_s},0,1\right).
 $$
 
 The training objective is:
@@ -422,8 +438,8 @@ Because both vectors are normalized, this dot product is cosine similarity.
 The top-$K$ windows are
 
 $$
-\operatorname{TopK}(\mathbf{q})=
-\operatorname{argsort}_{j}\ s(\mathbf{q},\mathbf{v}_j).
+\mathrm{TopK}(\mathbf{q})=
+\mathrm{argsort}_{j}\ s(\mathbf{q},\mathbf{v}_j).
 $$
 
 The result contains the video identifier and the time interval, so the UI can
@@ -546,27 +562,29 @@ CUDA when available, with CPU fallback.
 
 ### Full-run result: three-head checkpoint
 
+The values below are the current 16-frame reference, not the earlier
+eight-frame pilot.
+
 The full cache produced 18,994 windows from 1,300 videos with no failed video
 decodes. The three-head training-only index contains 14,824 windows. On 4,170
 held-out test queries, the run achieved:
 
 | Metric | Result |
 | --- | ---: |
-| Recall@1 | 0.6763 |
-| Recall@5 | 0.9113 |
-| Recall@10 | 0.9321 |
-| Mean temporal IoU | 0.2598 |
-| Median temporal IoU | 0.1979 |
-| Mean boundary error | 7.23 s |
-| Median boundary error | 6.50 s |
-| Mean duplicate rate | 0.1650 |
-| Misses | 283 |
+| Recall@1 | 0.6604 |
+| Recall@5 | 0.9070 |
+| Recall@10 | 0.9326 |
+| Mean temporal IoU | 0.2606 |
+| Median temporal IoU | 0.2010 |
+| Mean boundary error | 7.305 s |
+| Mean normalized boundary error | 0.5710 |
+| Mean duplicate rate | 0.1753 |
+| Misses | 281 / 4,170 |
 
-For comparison, the earlier one-head checkpoint reached Recall@1 0.6360,
-Recall@5 0.8746, Recall@10 0.9173, and 345 misses. The three-head checkpoint
-improves retrieval recall and reduces misses in this run. Temporal IoU and
-boundary error change only slightly, so the boundary head is a useful first
-experiment rather than a production-quality localizer.
+The earlier eight-frame runs remain available under `outputs/phase11` for
+historical comparison. The 16-frame result is now the reference for future
+experiments. Temporal IoU and boundary error remain modest, so the boundary
+head is a localization experiment rather than a production-quality localizer.
 
 The gap between retrieval recall and temporal IoU is important: the learned
 system usually retrieves a semantically relevant activity, but the current
@@ -585,7 +603,7 @@ Useful measures include:
 - **temporal intersection-over-union:**
 
   $$
-  \operatorname{IoU}_t =
+  \mathrm{IoU}_t =
   \frac{|I_{\text{pred}}\cap I_{\text{true}}|}
        {|I_{\text{pred}}\cup I_{\text{true}}|};
   $$

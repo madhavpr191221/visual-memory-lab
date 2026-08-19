@@ -1,704 +1,580 @@
-# Charades video memory: data, windows, and retrieval
+# Charades video memory: implementation, data contracts, and evaluation
 
-This is a living document for the Charades part of Visual Memory Lab. We will
-append to it as the video-memory system grows.
+This is the implementation-grounded reference for the Charades video-memory
+pipeline. It answers four questions precisely:
 
-The goal is simple: given a question such as **“When did the person sit down?”**,
-return a short, playable part of a video that is useful evidence. The system is
-not trying to write a story about the whole video. It is trying to locate a
-moment and show the evidence around that moment.
+1. What comes from the dataset, and how is it represented?
+2. What is the input and output of each preparation and model stage?
+3. How does a natural-language question become a timestamped result?
+4. Which measurements tell us whether retrieval and localization worked?
 
-## 1. What we start with
+The application goal is deliberately modest: a user asks about a recording and
+receives a small set of playable time ranges. The answer remains tied to the
+video and to the official annotations. A fluent explanation is not treated as
+ground truth.
 
-Charades contains short, staged household videos and several kinds of human
-annotations. A row in the Charades CSV describes one complete video.
+## 0. The whole system in one picture
 
-For example, video `X226B` has a source video, action intervals, objects, and
-human descriptions. The row also has a `script` field, which is the primary
-summary sentence for the video.
+There are two timelines in this project. The **offline timeline** prepares and
+learns from the recordings. The **online timeline** answers one user question.
+Keeping them separate matters: the expensive video decoding and CLIP encoding
+should happen once, while a question should return quickly from saved vectors.
 
-The important distinction is between **video-level metadata** and
-**window-level evidence**:
+```mermaid
+flowchart LR
+    A[Charades MP4 files] --> B[Official CSV annotations]
+    A --> C[Four-second overlapping windows]
+    B --> C
+    C --> D[16 RGB timestamps per window]
+    D --> E[PyAV decode and CLIP ViT-B/32]
+    E --> F[16 frame vectors, each 512-D]
+    F --> G[Temporal Transformer]
+    G --> H[Window vector plus action and boundary heads]
+    H --> I[Exact train-only index]
 
-```text
-video-level metadata     = facts or descriptions about the complete recording
-window-level evidence    = the four seconds currently being shown to the user
+    Q[User question] --> J[CLIP text vector]
+    Q --> K[LLM label normalization]
+    K --> I
+    J --> I
+    I --> L[Rank and group candidate windows]
+    L --> M[Playable interval and timestamped frames]
+    M --> N[Optional VLM explanation]
 ```
 
-An object listed for a video is not guaranteed to be visible in every window.
-Likewise, a description of the complete video may mention an action that
-happened much earlier than the displayed time range.
+In plain language: the model does not search raw pixels every time the user
+asks a question. It searches a memory of previously computed window vectors,
+then returns the original video as evidence.
 
-## 2. The annotation fields
+## 1. Source data and provenance
 
-The source CSV contains these fields:
+The local dataset is `data/Charades_v1_480`. Preparation code lives in
+`src/visual_memory_lab/charades.py`; learned video preparation, training, and
+evaluation live in `src/visual_memory_lab/learned_video.py`; the temporal model
+is in `src/visual_memory_lab/temporal.py`.
 
-| Field | Meaning | Use in our system |
-|---|---|---|
-| `id` | Video identifier, such as `X226B` | Locates the MP4 and identifies results |
-| `script` | Main human-written description of the video | Context and future display option |
-| `objects` | Semicolon-separated object names | Video-level object metadata |
-| `descriptions` | One or more additional human descriptions | Displayed context text; not VLM output |
-| `actions` | Structured action IDs with start/end seconds | Window labels and evaluation reference |
-| `length` | Video duration in seconds | Determines how many windows are created |
+The Charades CSV provides several different annotation sources. They are kept
+separate rather than concatenated into one pseudo-caption:
 
-### Semicolons in `descriptions`
+| Source field | Meaning | How the pipeline uses it |
+| --- | --- | --- |
+| `id` | Recording identifier, for example `X226B` | Locates the MP4 and identifies evidence |
+| `length` | Full recording duration in seconds | Builds valid time windows |
+| `script` | One dataset-written summary/script | Recording context and UI display |
+| `descriptions` | One or more dataset-written descriptions | Context text; not model-generated |
+| `objects` | Video-level object list | Context and object hints; not per-frame truth |
+| `actions` | Action class IDs plus start/end seconds | Window labels and evaluation reference |
+| `split` | Official train or test assignment | Prevents train/test leakage |
 
-The semicolon separates independent descriptions, usually written by different
-annotators for the same video. For `X226B`, the value is effectively:
+An action string such as `c077 21.00 27.20` is parsed into an action ID and
+interval, then mapped through `Charades_v1_classes.txt` to a name such as
+`Putting a pillow somewhere`. The semicolon in `descriptions` separates
+independent dataset descriptions. It does not indicate two retrieval passes,
+and no VLM generated those sentences.
 
-```text
-Description 1:
-a person is cooking something on the stove, they stop and then pick up a bottle,
-and then sits down in a chair adjusting the pillows.
-
-Description 2:
-A person is cooking on the stove. Then they grab a bottle and sit down.
-```
-
-The semicolon does **not** mean that our system performed two retrieval steps.
-It means the dataset supplied two textual views of the same complete recording.
-
-These sentences were written by dataset annotators. They were not generated by
-a vision-language model.
-
-## 3. Preparing the data
-
-### 3.1 Read the official annotations
-
-The preparation code reads the Charades CSV and the action-class file. An action
-entry such as:
+One prepared recording has this conceptual schema:
 
 ```text
-c077 21.00 27.20
+video = {
+  video_id, split, video_path, subject, scene, length_s,
+  script, descriptions[], objects[],
+  actions[{action_id, action_name, start_s, end_s}]
+}
 ```
 
-is mapped through `Charades_v1_classes.txt` to:
+Objects are recording-level hints. If `laptop` is listed, that does not mean a
+laptop is visible in every frame or every temporal window.
 
-```text
-Putting a pillow somewhere, from 21.00 s to 27.20 s
-```
+## 2. Window construction and labels
 
-The resulting manifest keeps the source video path, split, objects, descriptions,
-and structured actions. We do not copy the MP4 files into every artifact.
-
-### 3.2 Create temporal windows
-
-The current learned pipeline uses:
-
-```text
-window length = 4 seconds
-stride        = 2 seconds
-```
-
-For a 30-second video, the windows look approximately like:
-
-```text
-0–4 s, 2–6 s, 4–8 s, ..., 26–30 s
-```
-
-The overlap is intentional. An action may begin near the end of one window and
-continue into the next. The trade-off is that neighbouring results can be
-redundant; later we can group or suppress overlapping results for a cleaner UI.
-
-For each window, the preparation code keeps only action intervals that overlap
-the window. For `X226B`, the 22–26 second window contains:
-
-```text
-Putting a pillow somewhere
-Sitting in a chair
-Someone is going from standing to sitting
-```
-
-The cooking action occurred at 0–9.5 seconds, so it is not a label for this
-window. It may still appear in the longer video description because that text
-describes the entire recording.
-
-### 3.3 Sample frames
-
-Each four-second window is represented by eight evenly spaced RGB frame
-timestamps. The frames are references into the original MP4; they are not eight
-separate videos.
-
-```text
-four-second window
-        ↓
-eight ordered RGB frames
-        ↓
-one temporal representation for retrieval
-```
-
-The eight frames provide a small view of what happened across the interval,
-rather than relying on one potentially uninformative frame.
-
-## 4. What text is used for learning?
-
-There are two different kinds of text in the current implementation.
-
-### Official text shown as context
-
-The original `script` and `descriptions` are retained as dataset text. The UI
-can show them to help a reviewer understand the recording, but they describe the
-video at a broad level.
-
-### Deterministic training text
-
-For a window with structured action labels, our code creates a simple sentence
-such as:
-
-```text
-A person is putting a pillow somewhere and sitting in a chair.
-```
-
-This is a template generated from the official action names. It is not a VLM
-caption. It gives CLIP a stable text target while preserving the official action
-intervals for evaluation.
-
-No AI captioning model is currently called to produce the displayed Charades
-descriptions.
-
-## 5. How retrieval works
-
-Retrieval has an offline part and an online part.
-
-### 5.1 Offline: build the video memory
-
-For every prepared window:
-
-```text
-8 RGB frames
-      ↓
-CLIP image encoder
-      ↓
-8 frame embeddings
-      ↓
-temporal encoder
-      ↓
-one window embedding
-      ↓
-normalized vector index
-```
-
-CLIP ViT-B/32 converts each image into a vector. The temporal head combines the
-ordered frame vectors so that the result represents the whole four-second
-window, not just one frame.
-
-The expensive video decoding and image encoding happen once when the artifacts
-are built. The resulting vectors and metadata are saved to disk.
-
-### 5.2 Online: answer a question
-
-When the user asks a text question, for example:
-
-```text
-When did the person sit down?
-```
-
-the application does this:
-
-```text
-question
-   ↓
-CLIP text encoder
-   ↓
-query vector 𝐪
-   ↓
-compare 𝐪 with every stored window vector 𝐳ᵢ
-   ↓
-rank by similarity
-   ↓
-return top-k time windows and video evidence
-```
-
-The current index uses an exact dot-product search over normalized vectors. With
-normalization, this dot product is cosine similarity:
+The preparation command first builds four-second windows with a two-second
+stride. For recording duration $T$, window length $W=4$ and stride $S=2$:
 
 $$
-s_i = \mathbf{q}^{\top}\mathbf{z}_i,
-\qquad \lVert \mathbf{q}\rVert_2 = \lVert \mathbf{z}_i\rVert_2 = 1.
+I_i = [s_i,e_i],\qquad
+s_i=iS,\qquad e_i=\min(s_i+W,T).
 $$
 
-The returned windows are:
+Thus a 30-second recording produces approximately $[0,4]$, $[2,6]$,
+$[4,8]$, and so on. Windows overlap intentionally: an action crossing a
+boundary can be represented in more than one window.
+
+Action $A_k=[a_k,b_k]$ is attached to a window when the intervals overlap:
 
 $$
-\operatorname{TopK}(\mathbf{q}) = \text{the } k \text{ windows with the largest } s_i.
+b_k>s_i\quad\text{and}\quad a_k<e_i.
 $$
 
-The browser then plays the original MP4 using the returned `start_s` and
-`end_s`. It does not regenerate the video and it does not ask a VLM to invent
-an answer at query time.
+This produces a multi-label problem. For example, if a window overlaps
+`Holding a laptop` and `Someone is running somewhere`, both labels are valid;
+neither is removed just because the other exists.
 
-### 5.3 Action-aware retrieval
+### Formula beside a video example
 
-Similarity alone can return a visually similar but unsupported event. The
-online path therefore resolves the question against actions that actually
-occur in the selected recording:
+| Mathematical view | What the video looks like |
+| --- | --- |
+| Window $I_i=[2,6]$ | The player is showing seconds 2 through 6. |
+| Action $A_1=[3,5]$ | The person holds a laptop from seconds 3 through 5. |
+| Action $A_2=[4,7]$ | The person is also running from seconds 4 through 7. |
+| $5>2$ and $3<6$ | `Holding a laptop` belongs to the window. |
+| $7>2$ and $4<6$ | `Someone is running somewhere` also belongs to it. |
+| Target $\mathbf{y}=[1,1,0,\ldots]$ | Two action entries are on at the same time. |
 
-```text
-question
-   ↓
-CLIP text embedding
-   ↓
-rank the recording's available action names
-   ↓
-text-only LLM selects exact supplied labels (or returns unsupported)
-   ↓
-keep only windows carrying those action labels
-   ↓
-rank and merge the remaining temporal windows
+The labels are not saying that the whole four seconds are identical. They say
+that the window contains evidence for those actions somewhere inside it. This
+is why overlapping windows and later boundary estimation are necessary.
+
+The preparation flow is:
+
+```mermaid
+flowchart TD
+    A[One CSV row] --> B[Parse video metadata]
+    B --> C[Parse action IDs and start/end seconds]
+    C --> D[Create 4 s windows every 2 s]
+    D --> E{Does an action overlap this window?}
+    E -- yes --> F[Attach every overlapping action]
+    E -- no --> G[Keep description or object fallback text]
+    F --> H[Window JSONL record]
+    G --> H
 ```
 
-The LLM is not shown video frames and does not answer the question. It only
-normalizes wording. For example, “when did they pick up the bag?” can map to
-the exact Charades label “Taking a bag from somewhere.” It cannot invent
-“Opening a cabinet” when that action is absent from the recording.
-
-If no action is supported, the application returns a safe no-result and does
-not call the VLM. This prevents a clothing-related window from being presented
-as evidence for a cabinet question.
-
-### 5.4 What “retrieval” does and does not mean
-
-## 6. Evidence-first application behavior
-
-The application keeps four things separate so a reviewer can tell exactly what
-the system found:
-
-| Interval | Meaning |
-|---|---|
-| **Matched action interval** | The official Charades start and end time for the action label. |
-| **Evidence window** | The indexed four-second window(s) that produced the retrieval result. |
-| **Context interval** | A small padded playback range around the action, normally two seconds on each side. |
-| **Visual review** | A later, explicit VLM check of sampled RGB frames. It is not run merely because a label matched. |
-
-For example, a result may report `Holding a laptop` at 0.6–7.8 seconds,
-show a 0.0–9.8 second player for context, and still say **partially visible**
-if the laptop appears clearly in only a few sampled frames. An annotation is
-not visual proof, and an object listed for the recording is not guaranteed to
-be visible throughout it.
-
-The recording panel now keeps the source fields distinct: video ID, duration,
-description, script, object list, and action annotations with exact intervals.
-Overlapping actions remain separate because several actions can be true at the
-same time (for example, “Holding a laptop” and “Someone is running somewhere”).
-
-When the user selects an event, the UI requests the visual review. The VLM sees
-only timestamped frames from the selected action interval and must return a
-plain-language observation, citations to those frame IDs, and one of:
+Each window record contains:
 
 ```text
-supported | partially_visible | unclear | not_visibly_confirmed
+window = {
+  video_id, split, start_s, end_s, actions[], objects[],
+  description, text, timestamps_s[16]
+}
 ```
 
-If the question has no matching action in the chosen recording, the system
-returns a safe no-result instead of substituting a semantically similar action.
-This is important for a technician: “no cabinet event was annotated” is very
-different from “the system found a nearby clothing event and guessed cabinet.”
+The deterministic training text is made by `window_text`:
 
-The read-only frame endpoint decodes evidence on demand, so the repository does
-not create thousands of derived image files. A future evaluation pass can use
-the same endpoint to measure visual-support agreement, boundary error, and
-unsupported-query rejection.
+1. If structured action labels exist, use `A person is ...` followed by the
+   action names.
+2. Otherwise use the full recording description.
+3. Otherwise use the object list.
+4. Otherwise use a generic fallback.
 
-### 6.1 Source fields and provenance
+This text is a stable CLIP target, not a generated caption. The original
+`script`, descriptions, actions, and objects remain available as separate
+metadata fields for display and audit.
 
-`description` and `script` are dataset text written for the complete recording;
-they are not captions generated by our VLM. `actions` are structured labels
-with times. `objects` are video-level hints. The learned index stores the
-window vectors and metadata, while the application catalogue is built from the
-full prepared set and the evaluation index remains train-only.
+### What becomes a label, and what does not?
 
-The intended product question is therefore:
+| Item | Training/evaluation role | Example from a recording |
+| --- | --- | --- |
+| Action interval | Ground-truth event and time range | `Opening a closet/cabinet`, 9.5-17.0 s |
+| Action name | Multi-label target and query vocabulary | `Holding a laptop` |
+| Script/description | Context text and optional CLIP text target | “A person walks through a doorway...” |
+| Object list | Recording-level context only | `laptop`, `doorway`, `vacuum` |
+| VLM sentence | Optional post-retrieval explanation | “The laptop is visible near the doorway.” |
 
-> What event is relevant, exactly when is it annotated, what surrounding video
-> should I inspect, and what can the supplied frames actually support?
+The last row is deliberately not used as temporal ground truth. A VLM may be
+helpful for a human-readable explanation, but the official interval remains the
+measurement reference.
 
-Retrieval answers:
+## 3. RGB sampling and preprocessing
 
-> Which stored time windows look most compatible with this question?
+The current reference experiment uses 16 RGB samples per four-second window.
+For a window $[s,e]$ and $F=16$ samples, timestamp $t_j$ is the center of its
+equal sub-interval:
 
-It does not automatically prove that the event happened, identify a persistent
-object, or understand every sentence in a long description. The returned video
-window is evidence for a human to inspect.
+$$
+t_j=s+\left(j+\frac{1}{2}\right)\frac{e-s}{F},
+\qquad j=0,\ldots,F-1.
+$$
 
-## 6. Example: the `X226B` card
+For a full four-second window this is $0.125,0.375,\ldots,3.875$ seconds
+after the window start. Sampling at sub-interval centers avoids repeatedly
+using the exact boundary frame.
 
-For the 22–26 second result:
+PyAV decodes the original MP4 at each timestamp. Each decoded RGB image is
+passed through the Hugging Face preprocessing for `openai/clip-vit-base-patch32`:
+resize/crop to the model's 224 by 224 input and convert pixels to the CLIP
+normalized floating-point tensor. The image encoder is frozen and produces a
+512-dimensional vector per frame:
+
+$$
+\mathbf{x}_{i,j}\in\mathbb{R}^{512},
+\qquad X_i=[\mathbf{x}_{i,1},\ldots,\mathbf{x}_{i,16}]
+\in\mathbb{R}^{16\times512}.
+$$
+
+The cache stores these arrays and the window metadata. It does not copy a new
+video for each window. The reference cache is
+`outputs/phase11/frames16/cache-v2` and records 18,994 windows from 1,300
+videos, with no failed videos.
+
+```mermaid
+flowchart LR
+    A[Window 2.0-6.0 s] --> B[16 center timestamps]
+    B --> C[PyAV decodes RGB frames]
+    C --> D[Resize and center crop to 224x224]
+    D --> E[CLIP pixel normalization]
+    E --> F[CLIP image encoder]
+    F --> G[16 vectors of length 512]
+    G --> H[Saved cache: arrays plus JSONL metadata]
+```
+
+### Formula beside the video example
+
+For the window from 2.0 to 6.0 seconds, $e-s=4$ and $F=16$:
+
+| Math | Video interpretation |
+| --- | --- |
+| $t_0=2+(0.5)(4/16)=2.125$ | The first snapshot is just after 2 seconds. |
+| $t_7=2+(7.5)(4/16)=3.875$ | The eighth snapshot is just before 4 seconds. |
+| $t_{15}=2+(15.5)(4/16)=5.875$ | The last snapshot is just before 6 seconds. |
+| $\mathbf{x}_{i,7}\in\mathbb{R}^{512}$ | CLIP's visual description of the frame at 3.875 s. |
+| $X_i\in\mathbb{R}^{16\times512}$ | The complete ordered visual record for seconds 2-6. |
+
+If a person reaches for a laptop at 2.5 seconds and leaves at 5.5 seconds,
+the middle samples capture that progression. A single still image could miss
+the reach; the ordered set gives the temporal model several chances to see it.
+
+## 4. Temporal model: exact input and output contract
+
+The trainable model receives one cached window tensor
+$X_i\in\mathbb{R}^{16\times512}$. CLIP remains frozen. The temporal module is
+`TemporalWindowEncoder`:
+
+1. A learned linear projection maps each 512-vector to 256 dimensions.
+2. A learned position embedding is added to preserve frame order.
+3. Two Transformer encoder layers, each with four attention heads, exchange
+   information between the 16 ordered frames.
+4. The contextualized frame vectors are mean-pooled.
+5. A projection and LayerNorm produce a normalized 512-dimensional window
+   vector.
+
+For one window, the contract is therefore:
 
 ```text
-video ID       → X226B
-time window    → 22–26 seconds
-window actions → pillow placement, sitting, standing-to-sitting
-objects        → video-level list supplied by Charades
-description    → two semicolon-separated human descriptions of the full video
+input:  float tensor [16, 512]
+output: normalized retrieval vector [512]
+        action logits [157]
+        boundary logits [2]
 ```
 
-The retrieval model selected this window because its visual embedding was close
-to the embedding of the user’s question. The action labels and descriptions are
-metadata attached to the result; they are not themselves the similarity score.
+The current training split contains 157 distinct action IDs. The number is a
+property of this prepared subset, not a universal Charades constant.
 
-## 7. How the temporal encoder works
-
-The temporal encoder converts the eight frame embeddings for one window into a
-single embedding representing the whole short event. It does not read raw pixels
-directly. CLIP has already converted each RGB frame into a visual vector.
-
-For a technician inspecting an office, imagine a four-second recording showing:
-
-```text
-frame 1: technician standing near a workstation
-frame 2: technician reaches toward a bottle
-frame 3: technician holds the bottle
-frame 4: technician turns away from the desk
-frame 5: technician walks toward a chair
-frame 6: technician begins sitting
-frame 7: technician adjusts a pillow
-frame 8: technician is seated
+```mermaid
+flowchart TD
+    A[16 x 512 frozen CLIP frame matrix]
+      --> B[Linear projection: 512 -> 256]
+    B --> C[Add learned position embeddings]
+    C --> D[Transformer encoder: 2 layers, 4 heads]
+    D --> E[Mean pool 16 contextual frame vectors]
+    E --> F[Projection and LayerNorm]
+    F --> G[Shared representation r]
+    G --> H[Retrieval head: normalized z, 512-D]
+    G --> I[Action head: 157 logits]
+    G --> J[Boundary head: start/end logits]
 ```
 
-The encoder receives eight CLIP frame vectors:
+In equations, the shared sequence representation is:
 
 $$
-\mathbf{x}_1,\mathbf{x}_2,\ldots,\mathbf{x}_8
-\in \mathbb{R}^{512}.
-$$
-
-### 7.1 Put the frame vectors in a working space
-
-A learned linear layer maps each CLIP vector into a 256-dimensional internal
-vector:
-
-$$
-\mathbf{h}_t = \mathbf{W}_{\mathrm{in}}\mathbf{x}_t + \mathbf{b}_{\mathrm{in}}.
-$$
-
-This is simply a learned change of representation. The technician example is
-still the same sequence; the model is just expressing each snapshot in the
-space used by the temporal module.
-
-### 7.2 Tell the model the order of the frames
-
-The model adds a learned position vector to each frame:
-
-$$
-\mathbf{h}'_t = \mathbf{h}_t + \mathbf{p}_t.
-$$
-
-The position vector \(\mathbf{p}_t\) tells the encoder whether a snapshot came
-early or late in the four-second inspection. This allows it to distinguish:
-
-```text
-reach → hold bottle → sit down
-```
-
-from:
-
-```text
-sit down → hold bottle → stand up
-```
-
-The same objects may appear in both sequences, but the technician’s action is
-different because the order is different.
-
-### 7.3 Compare the frames with one another
-
-The sequence passes through two Transformer encoder layers with four attention
-heads. In practical terms, each frame can use information from the other frames:
-
-- the reaching frame can be related to the later frame where the bottle is held;
-- the frame where sitting begins can be related to the final seated frame;
-- a frame can be interpreted in the context of what came before and after it.
-
-The module is not making a separate decision for every image. It is building a
-context-aware version of each frame vector:
-
-$$
-(\mathbf{h}'_1,\ldots,\mathbf{h}'_8)
-\longrightarrow
-(\widetilde{\mathbf{h}}_1,\ldots,\widetilde{\mathbf{h}}_8).
-$$
-
-### 7.4 Summarize the complete window
-
-The contextualized frame vectors are averaged into one summary vector:
-
-$$
-\bar{\mathbf{h}}
-= \frac{1}{8}\sum_{t=1}^{8}\widetilde{\mathbf{h}}_t.
-$$
-
-That summary is projected back into the CLIP embedding size and normalized:
-
-$$
-\mathbf{z}
-= \mathbf{W}_{\mathrm{out}}\bar{\mathbf{h}} + \mathbf{b}_{\mathrm{out}},
+\mathbf{h}_j=\mathbf{W}_{in}\mathbf{x}_j+\mathbf{b}_{in}+\mathbf{p}_j,
 \qquad
-\mathbf{z}\leftarrow
-\frac{\mathbf{z}}{\lVert\mathbf{z}\rVert_2}.
+H'=\mathrm{Transformer}(\mathbf{h}_1,\ldots,\mathbf{h}_{16}),
 $$
 
-The resulting \(\mathbf{z}\) is the memory vector for the complete four-second
-technician observation. It is what gets stored in the vector index.
-
-### 7.5 How the text matches the window
-
-The technician’s question is also converted into a vector. For example:
-
-```text
-When did the technician sit down?
-        ↓
-CLIP text encoder
-        ↓
-question vector 𝐪
-```
-
-The system compares this question vector with each stored window vector:
-
 $$
-s_i = \mathbf{q}^{\top}\mathbf{z}_i.
+\mathbf{r}=\mathrm{LayerNorm}\left(
+\mathbf{W}_{out}\frac{1}{16}\sum_{j=1}^{16}\mathbf{h}'_j
++\mathbf{b}_{out}\right).
 $$
 
-The highest-scoring windows are returned as candidate evidence. The temporal
-encoder therefore helps the system search for a sequence such as:
-
-```text
-standing → moving toward chair → sitting → adjusting pillow
-```
-
-rather than treating eight snapshots as eight unrelated office images.
-
-### 7.6 What the temporal encoder does not do
-
-The temporal encoder produces a useful representation for retrieval. It does
-not, by itself:
-
-- prove that the technician performed the action;
-- identify a persistent physical object;
-- determine the exact action boundary;
-- understand hidden parts of the room;
-- replace a detector, tracker, depth system, or human review.
-
-Its role is narrower and practical:
-
-```text
-ordered frame evidence
-        ↓
-one searchable memory vector
-```
-
-## 8. Current limitations and next improvements
-
-- Neighbouring overlapping windows can produce repeated results.
-- The object list is video-level, not guaranteed to be window-level.
-- Long descriptions can mention actions outside the displayed time range.
-- A high similarity score is evidence for review, not a proof of identity or
-  causality.
-- The current text targets are deterministic templates, not VLM-generated
-  captions.
-
-The next retrieval-quality improvement is to diversify results: suppress highly
-overlapping windows from the same video, cap the number of results per video,
-and show the short window action labels separately from the full-video
-descriptions.
-
-## 9. Application workflow: find a moment or summarize a video
-
-The application now exposes two simple tasks over the same prepared memory.
-
-### Find a moment
-
-```text
-technician question
-        ↓
-retrieve candidate windows
-        ↓
-remove overlapping duplicates
-        ↓
-show distinct playable moments
-        ↓
-review the evidence
-```
-
-For example:
-
-> When did the person sit down?
-
-The result is a short list of distinct time ranges. The system retrieves more
-candidates internally, then suppresses neighbouring windows from the same video
-when their time overlap is substantial. This avoids showing five copies of the
-same event simply because the four-second windows overlap.
-
-### Summarize a video
-
-```text
-choose one prepared video
-        ↓
-read its ordered action intervals
-        ↓
-build a timestamped event timeline
-        ↓
-select an event
-        ↓
-ask a follow-up about that evidence
-```
-
-The first implementation uses the official Charades action intervals to create
-the timeline. This is deliberate: it gives us a reproducible, auditable summary
-before introducing a cloud-generated interpretation.
-
-Example:
-
-```text
-21.0–27.2 s   Putting a pillow somewhere
-20.7–29.6 s   Sitting in a chair
-16.6–22.7 s   Going from standing to sitting
-```
-
-The user can select one event and ask a question such as:
-
-> What happened around this event?
-
-The answer is scoped to that event and its immediate context. It is not allowed
-to silently inspect the entire archive.
-
-### Review and save a finding
-
-The application treats a selected result as a reviewable finding:
-
-1. Select a search result or grouped timeline event.
-2. Review the event with a short before/during/after playback context.
-3. Ask a follow-up question limited to that evidence interval.
-4. Mark the result as confirmed, unclear, needing manual review, or rejected.
-5. Save the question, answer, timestamp, evidence IDs, and an optional note.
-
-Timeline events are grouped when their annotation intervals overlap or are very
-close together. The raw annotation list remains available for audit, while the
-grouped story is the default view for a non-technical user. Saved video findings
-are stored in local SQLite history separately from office-image inspections.
-
-This phase still uses prepared Charades recordings and official annotations. It
-does not present annotations as VLM judgments. An explicit synthesis action may
-ask a VLM to explain one selected event, but the original video evidence and its
-limitations remain visible.
-
-## 10. Evaluation for the application
-
-The two tasks require different measurements.
-
-### Retrieval evaluation
-
-For text-to-moment retrieval, compare the returned interval with an official
-action interval:
+The three heads are:
 
 $$
-\operatorname{IoU}(I_{\mathrm{pred}}, I_{\mathrm{true}})
-= \frac{|I_{\mathrm{pred}}\cap I_{\mathrm{true}}|}
-        {|I_{\mathrm{pred}}\cup I_{\mathrm{true}}|}.
+\mathbf{z}=\mathrm{Normalize}(\mathbf{W}_r\mathbf{r}+\mathbf{b}_r),
+\qquad
+\hat{\mathbf{y}}=\mathbf{W}_a\mathbf{r}+\mathbf{b}_a,
+\qquad
+\hat{\mathbf{b}}=\sigma(\mathbf{W}_b\mathbf{r}+\mathbf{b}_b).
 $$
 
-We measure Recall@1/5/10, temporal IoU, boundary error, and duplicate rate. The
-duplicate rate is particularly relevant to the user experience: a high score
-with eight near-identical clips is not a useful answer.
+Here **bold symbols are vectors**. $\mathbf{z}$ is used for retrieval,
+$\hat{\mathbf{y}}$ is a 157-dimensional multi-label action prediction, and
+$\hat{\mathbf{b}}=[\hat{u}_{start},\hat{u}_{end}]$ predicts normalized action
+boundaries inside the current window.
 
-### Timeline evaluation
+### Formula beside a technician-style video example
 
-For video summarization, measure whether the timeline contains the right events,
-in the right order, with reasonable times:
+| Model operation | What it means for the video |
+| --- | --- |
+| $\mathbf{x}_1,\ldots,\mathbf{x}_{16}$ | Sixteen CLIP descriptions of a technician's ordered views. |
+| $\mathbf{h}_j=\mathbf{W}_{in}\mathbf{x}_j+\mathbf{b}_{in}+\mathbf{p}_j$ | Put every frame into the model's working space and mark its position in time. |
+| Transformer attention | Let the “reaching” frame use the later “holding” frame as context. |
+| $\frac{1}{16}\sum_j\mathbf{h}'_j$ | Summarize the entire four-second inspection moment. |
+| $\mathbf{z}$ | One searchable memory for “reach, hold, and turn away.” |
+| $\hat{\mathbf{y}}$ | Scores actions such as `Holding a laptop` or `Running`. |
+| $\hat{\mathbf{b}}$ | Estimates where the action starts and ends inside this window. |
 
-- event precision and recall;
-- temporal IoU against official action intervals;
-- start/end boundary error;
-- event ordering accuracy;
-- missed-event rate.
+The temporal model is not a detector. It does not draw a box around a laptop.
+It learns a compact representation of the ordered event and provides auxiliary
+action and boundary predictions that can improve ranking and localization.
 
-### Follow-up evaluation
+## 5. Target preparation and loss
 
-For an evidence-scoped follow-up, check that the answer:
+For each window, the action target is a 157-dimensional multi-hot vector
+$\mathbf{y}$. If `Holding a laptop` and `Someone is running somewhere` overlap
+the window, both corresponding entries of $\mathbf{y}$ equal 1.
 
-- uses only the selected event and nearby context;
-- cites an available evidence window;
-- does not invent an unseen action;
-- says “unclear” when the evidence is insufficient.
+For the action with the greatest overlap, the boundary target is normalized
+relative to the window:
 
-The current annotation timeline is the evaluation reference. A VLM explanation
-can enrich the wording, but it must not silently replace the official action
-intervals used for measurement.
+$$
+\mathbf{b}=
+\left[
+\mathrm{clip}\left(\frac{a_k-s_i}{e_i-s_i},0,1\right),
+\mathrm{clip}\left(\frac{b_k-s_i}{e_i-s_i},0,1\right)
+\right].
+$$
 
-## 11. Learned events and VLM-grounded answers
+Example: an annotated action from 1.0 to 3.0 seconds inside a window from 0.0
+to 4.0 seconds has target $\mathbf{b}=[0.25,0.75]$. A window can have action
+labels without a boundary target when no suitable single action interval is
+available; the reference run has 13,567 boundary-labelled training windows.
 
-The learned path now sits between retrieval and the user-facing answer. It does
-not replace the official Charades annotations. Those annotations provide the
-action IDs, object labels, and time intervals used as training targets and
-evaluation references. The VLM is invoked only after retrieval, to turn a small
-set of selected RGB evidence into readable language.
+### Formula beside a video example
 
-### What happens after a question
+Imagine the window is 0.0-4.0 seconds and the annotation says:
+`Holding a laptop` from 1.0-3.0 seconds.
+
+| Target | Calculation | Meaning |
+| --- | --- | --- |
+| Start | $(1.0-0.0)/(4.0-0.0)=0.25$ | The action begins one quarter of the way through the window. |
+| End | $(3.0-0.0)/(4.0-0.0)=0.75$ | The action ends three quarters of the way through the window. |
+| $\mathbf{b}$ | $[0.25,0.75]$ | The model should point to seconds 1-3, not claim the whole window. |
+
+At inference time, convert normalized coordinates back to seconds:
+
+$$
+\widehat{a}=s_i+\hat{u}_{start}(e_i-s_i),
+\qquad
+\widehat{b}=s_i+\hat{u}_{end}(e_i-s_i).
+$$
+
+So a prediction of $[0.25,0.75]$ for a 2.0-6.0 second window becomes
+3.0-5.0 seconds in the original video.
+
+The objective combines three terms:
+
+$$
+\mathcal{L}=\mathcal{L}_{retrieval}
++\lambda_a\mathcal{L}_{action}
++\lambda_b\mathcal{L}_{boundary}.
+$$
+
+The retrieval term is symmetric contrastive loss between normalized temporal
+vectors and normalized CLIP text vectors. The action term is multi-label binary
+cross-entropy. The boundary term is Smooth L1 between the predicted sigmoid
+coordinates and $\mathbf{b}$. The reference run uses
+$\lambda_a=1.0$ and $\lambda_b=2.0$.
+
+The model has 1,929,119 trainable parameters. The reference three-epoch CUDA
+run produced:
+
+```text
+epoch 1: total 3.2478 | retrieval 2.4475 | action 0.6209 | boundary 0.0897
+epoch 2: total 2.3197 | retrieval 1.7432 | action 0.4637 | boundary 0.0564
+epoch 3: total 1.7963 | retrieval 1.3761 | action 0.3477 | boundary 0.0363
+```
+
+These are optimization diagnostics, not evidence that timestamps are accurate.
+
+The three losses answer different questions:
+
+| Loss | Question being trained | Technician interpretation |
+| --- | --- | --- |
+| Retrieval | Is this window related to the text description? | “Does this short clip look like the requested event?” |
+| Action | Which official actions occur in the window? | “Is laptop-holding present, even if running is present too?” |
+| Boundary | Where inside the window is the strongest action interval? | “Which part should the technician inspect first?” |
+
+## 6. Online retrieval and answer flow
+
+The user-facing path is:
 
 ```text
 question
-  -> CLIP text vector
-  -> learned temporal index
-  -> overlapping windows grouped into one event
-  -> boundary head refines the event interval
-  -> six RGB frames sampled from that interval
-  -> VLM writes a cited answer, or annotation fallback is shown
+  -> CLIP text embedding \mathbf{q}
+  -> optional text-only LLM maps wording to exact available action labels
+  -> filter to supported labels in the selected recording
+  -> search learned temporal vectors
+  -> boundary-aware temporal reranking
+  -> group overlapping windows into distinct events
+  -> show RGB frames, timestamps, and playable evidence
+  -> optional VLM explanation scoped to selected evidence
 ```
 
-The event interval is the part the model believes contains the action. The
-player may show a wider context interval so a reviewer can inspect what happened
-just before and after. If $I_e=[s,e]$ is the event interval, the current context
-rule is:
+The LLM is a label-normalization aid, not an evidence source. It may map
+“when did they carry the laptop?” to the exact supplied label `Holding a laptop`.
+If no supplied action is compatible, the application returns a safe no-result;
+it does not substitute a nearby cabinet or clothing action.
+
+With normalized vectors, the retrieval score for query **q** and stored window
+**z**$_i$ is cosine similarity:
 
 $$
-I_c=[\max(0,s-2),\ \min(T,e+2)].
+s_i=\cos(\mathbf{q},\mathbf{z}_i)
+=\mathbf{q}^{\mathsf{T}}\mathbf{z}_i,
+\qquad
+\lVert\mathbf{q}\rVert_2=\lVert\mathbf{z}_i\rVert_2=1.
 $$
 
-### What the VLM receives
+The current index uses exact dot-product search over the 14,824 train windows.
+The browser then plays the original MP4 using the selected interval. Overlap
+grouping changes the displayed list, not the stored vectors or annotations.
 
-The VLM receives the user's question, the selected event label, six timestamped
-RGB frames, the official action/object metadata, and the evidence IDs. It is
-instructed not to search the full recording, invent a timestamp, or claim an
-object identity that the evidence does not establish. Its structured response
-contains:
+The VLM is invoked only after retrieval. It receives timestamped RGB frames and
+the selected event metadata, and can say that an event is supported, partially
+visible, unclear, or not visibly confirmed. It cannot repair a bad retrieval or
+turn a video-level object list into frame-level truth.
 
-- a short answer;
-- low/medium/high confidence;
-- citations to the supplied evidence windows;
-- limitations such as blur, occlusion, or incomplete coverage.
+### Formula beside the user flow
 
-When no API key is configured, or a cloud request fails, the UI shows the same
-event with a dataset-grounded fallback. This keeps the application usable and
-makes the provenance visible: **annotation fallback** and **VLM synthesis** are
-different answer sources.
+| Step | Math or data operation | What the user sees |
+| --- | --- | --- |
+| Ask | Text question becomes **q** | “When did someone carry a laptop?” |
+| Search | $s_i=\mathbf{q}^{\mathsf{T}}\mathbf{z}_i$ | Candidate windows ranked by compatibility. |
+| Restrict | Keep windows with the normalized action label | Unrelated cabinet clips are rejected. |
+| Refine | Apply predicted $\hat{\mathbf{b}}$ | A narrower event interval is proposed. |
+| Group | Merge intervals with substantial time overlap | One event card instead of five duplicate cards. |
+| Explain | VLM sees selected timestamped frames only | A readable answer with visible limitations. |
 
-### Why this is useful to a technician
+The full online flow is easier to audit when drawn as a sequence:
 
-The technician does not need to understand embeddings or temporal heads. They
-ask “When did someone open the cabinet?”, receive a few distinct event cards,
-play the timestamped evidence, and optionally ask “What happened immediately
-after that?”. The retrieval model finds the place in the recording; the VLM
-summarizes only the evidence the technician selected. That separation prevents a
-fluent model from silently becoming the source of truth.
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant API as Video API
+    participant L as Label resolver
+    participant IDX as Temporal index
+    participant V as Original video
+    participant M as Optional VLM
 
-### Current learned model
+    U->>API: Ask a question for one recording
+    API->>L: Normalize wording against available labels
+    L-->>API: Exact label or unsupported
+    API->>IDX: Embed question and rank compatible windows
+    IDX-->>API: Scores, labels, intervals, boundary estimates
+    API->>V: Decode selected interval and context frames
+    V-->>API: Playable clip and timestamped RGB evidence
+    API-->>U: Distinct candidate event cards
+    U->>M: Optional explanation request
+    M-->>U: Evidence-scoped answer and limitations
+```
 
-The learned temporal model has three heads over a shared sequence encoder:
+The LLM in this diagram can clarify that “carry a laptop” is close to the
+supplied action label `Holding a laptop`. It cannot create a new timestamp. The
+timestamp comes from the stored annotation, the learned boundary prediction,
+and the original playable video.
+
+## 7. Evaluation and what the numbers mean
+
+The held-out evaluation used 4,170 test queries and the matching 16-frame
+manifest. A query is correct for retrieval when a returned window shares an
+official action label and overlaps its official interval.
+
+For a predicted interval $P=[p_s,p_e]$ and official interval
+$G=[g_s,g_e]$, temporal intersection-over-union is:
 
 $$
-v=\operatorname{Normalize}(W_r r),\qquad
-\hat{y}=W_a r+b_a,\qquad
-\hat{b}=\sigma(W_b r+b_b).
+\mathrm{IoU}(P,G)=
+\frac{\max(0,\min(p_e,g_e)-\max(p_s,g_s))}
+{\max(p_e,g_e)-\min(p_s,g_s)}.
 $$
 
-Here $v$ is used for retrieval, $\hat{y}$ predicts multiple visible actions,
-and $\hat{b}$ predicts normalized start/end coordinates within a four-second
-window. The total training loss is:
+| Formula | Video example |
+| --- | --- |
+| $G=[10,14]$ | The official annotation says the action lasts from 10 to 14 s. |
+| $P=[9,13]$ | The system returns a clip from 9 to 13 s. |
+| Intersection $=[10,13]$ | Three seconds agree. |
+| Union $=[9,14]$ | Five seconds are covered by either interval. |
+| $\mathrm{IoU}=3/5=0.60$ | The result overlaps well, but it starts too early. |
 
-$$
-\mathcal{L}=\mathcal{L}_{\mathrm{retrieval}}
- +\lambda_a\mathcal{L}_{\mathrm{action}}
- +\lambda_b\mathcal{L}_{\mathrm{boundary}}.
-$$
+Recall@k asks a different question: among the first $k$ returned cards, did at
+least one have the right label and overlap the official interval? This is why a
+system can have high Recall@10 while still having modest temporal IoU: it often
+finds the right event somewhere in ten candidates, but does not yet place it
+tightly in time.
 
-CLIP remains frozen in this first learned experiment. Depth, audio, persistent
-object identity, and production-grade frame boundaries are future extensions.
+| Metric | Result | Interpretation |
+| --- | ---: | --- |
+| Recall@1 | 0.6604 | Correct event appears first 66.04% of the time |
+| Recall@5 | 0.9070 | Correct event appears in five candidates 90.70% of the time |
+| Recall@10 | 0.9326 | Correct event appears in ten candidates 93.26% of the time |
+| Mean temporal IoU | 0.2606 | Retrieved time ranges are still coarse |
+| Median temporal IoU | 0.2010 | Typical overlap is lower than the recall suggests |
+| Mean boundary error | 7.305 s | Absolute start/end error summary; large values reflect broad windows and fallback cases |
+| Mean normalized boundary error | 0.5710 | Error relative to the annotated interval scale |
+| Duplicate rate | 0.1753 | Fraction of displayed candidates that repeat an overlapping moment |
+| Misses | 281 / 4,170 | No top-k candidate met the label-and-overlap criterion |
+
+The important engineering conclusion is that the model retrieves the right
+event family fairly well at top-k, but temporal localization is not yet precise.
+Recall is therefore not a timestamp guarantee. The files are:
+
+```text
+outputs/phase11/frames16/cache-v2/summary.json
+outputs/phase11/frames16/training/summary.json
+outputs/phase11/frames16/evaluation/metrics.json
+outputs/phase11/frames16/evaluation/report.md
+```
+
+## 8. Reproduce the reference run
+
+```powershell
+uv run visual-memory-lab build-charades-frames `
+  --manifest outputs/charades/learned/windows/windows.jsonl `
+  --output outputs/phase11/frames16 `
+  --frames-per-window 16
+
+uv run visual-memory-lab build-charades-video-cache `
+  --manifest outputs/phase11/frames16/frames.jsonl `
+  --output outputs/phase11/frames16/cache-v2 `
+  --device auto --workers 4 --batch-size 16
+
+uv run visual-memory-lab train-charades-video `
+  --cache outputs/phase11/frames16/cache-v2 `
+  --output outputs/phase11/frames16/training `
+  --device auto --boundary-weight 2.0 --action-weight 1.0
+
+uv run visual-memory-lab index-charades-video `
+  --cache outputs/phase11/frames16/cache-v2 `
+  --checkpoint outputs/phase11/frames16/training/temporal_multitask.pt `
+  --output outputs/phase11/frames16/index --device auto --split train
+
+uv run visual-memory-lab evaluate-charades-video `
+  --index outputs/phase11/frames16/index `
+  --test-manifest outputs/phase11/frames16/frames.jsonl `
+  --output outputs/phase11/frames16/evaluation --device auto
+```
+
+The earlier `outputs/charades/learned` and `outputs/phase11` artifacts used
+eight-frame windows and remain as historical comparisons. The 16-frame
+`frames16` run is the current reference for future experiments.
+
+## 9. Worked technician interpretation
+
+Suppose a maintenance recording contains a person running through a doorway
+with a laptop. A user asks, “When did someone carry the laptop through the
+door?” The system may normalize this to `Holding a laptop` plus a nearby doorway
+relation, retrieve a window, and show its annotated interval and context.
+
+The technician can inspect the frames and playback. If the laptop is visible in
+only two frames, the correct result is “partially visible,” not a confident
+claim that an identified laptop was tracked. If the recording has no compatible
+action, the correct result is “no matching annotated event was found.” This
+separation between dataset label, learned retrieval, visual review, and final
+wording is the main reliability boundary of the application.
+
+## 10. Current boundaries
+
+This reference system does not yet provide persistent object identity, depth,
+audio understanding, true frame-level segmentation, or production-grade event
+boundaries. Those are separate extensions. The current contribution is a
+reproducible path from official video annotations to learned temporal retrieval,
+with explicit tensor contracts, evidence provenance, and held-out metrics.

@@ -355,4 +355,4 @@ The frozen representation is from Alec Radford et al., “Learning Transferable
 Visual Models From Natural Language Supervision,” ICML 2021. See the
 [paper](https://proceedings.mlr.press/v139/radford21a.html), the
 [official CLIP repository](https://github.com/openai/CLIP), and the repository's
-[Third-Party Notices](../../THIRD_PARTY_NOTICES.md).
+[Third-Party Notices](../../../THIRD_PARTY_NOTICES.md).

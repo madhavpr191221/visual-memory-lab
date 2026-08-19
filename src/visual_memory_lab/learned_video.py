@@ -466,6 +466,8 @@ def train_temporal_from_cache(
     batch_size: int = 32,
     learning_rate: float = 1e-4,
     split: str = "train",
+    action_weight: float = 1.0,
+    boundary_weight: float = 2.0,
 ) -> dict[str, object]:
     """Train retrieval, action, and boundary heads against cached features."""
 
@@ -546,6 +548,8 @@ def train_temporal_from_cache(
                 action_targets[indices].to(resolved),
                 boundary_targets[indices].to(resolved),
                 boundary_mask[indices].to(resolved),
+                action_weight=action_weight,
+                boundary_weight=boundary_weight,
             )
             optimizer.zero_grad(set_to_none=True)
             loss.backward()
@@ -553,10 +557,19 @@ def train_temporal_from_cache(
             losses.append(float(loss.detach().cpu()))
             for key, value in parts.items():
                 loss_parts[key].append(float(value.detach().cpu()))
-        history.append({"epoch": epoch + 1, "loss": float(np.mean(losses)) if losses else float("nan"), **{f"{key}_loss": float(np.mean(value)) if value else float("nan") for key, value in loss_parts.items()}})
+        epoch_summary = {"epoch": epoch + 1, "loss": float(np.mean(losses)) if losses else float("nan"), **{f"{key}_loss": float(np.mean(value)) if value else float("nan") for key, value in loss_parts.items()}}
+        history.append(epoch_summary)
+        print(
+            f"Epoch {epoch + 1}/{epochs} | "
+            f"loss={epoch_summary['loss']:.4f} | "
+            f"retrieval={epoch_summary['retrieval_loss']:.4f} | "
+            f"action={epoch_summary['action_loss']:.4f} | "
+            f"boundary={epoch_summary['boundary_loss']:.4f}",
+            flush=True,
+        )
     torch.save({"state_dict": model.state_dict(), "input_dim": frames.shape[-1], "output_dim": texts.shape[-1], "max_frames": int(frames.shape[1]), "action_names": action_names, "model_type": "three_head_temporal_v1"}, output / "temporal_multitask.pt")
     (output / "history.jsonl").write_text("".join(json.dumps(item) + "\n" for item in history), encoding="utf-8")
-    summary = {"epochs": epochs, "window_count": len(frames), "split": split, "device": str(resolved), "trainable_parameters": sum(parameter.numel() for parameter in model.parameters()), "action_count": len(action_names), "boundary_labeled_windows": int(boundary_mask.sum()), "model_type": "three_head_temporal_v1", "output": str(output.resolve())}
+    summary = {"epochs": epochs, "window_count": len(frames), "split": split, "device": str(resolved), "trainable_parameters": sum(parameter.numel() for parameter in model.parameters()), "action_count": len(action_names), "boundary_labeled_windows": int(boundary_mask.sum()), "action_weight": action_weight, "boundary_weight": boundary_weight, "model_type": "three_head_temporal_v1", "output": str(output.resolve())}
     (output / "summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
     return summary
 
@@ -923,6 +936,16 @@ def boundary_error(first: tuple[float, float], second: tuple[float, float]) -> f
     return (abs(first[0] - second[0]) + abs(first[1] - second[1])) / 2.0
 
 
+def normalized_boundary_error(
+    predicted: tuple[float, float], target: tuple[float, float], duration_s: float
+) -> float:
+    """Mean start/end error expressed as a fraction of recording duration."""
+
+    if duration_s <= 0:
+        raise ValueError("duration_s must be positive")
+    return boundary_error(predicted, target) / duration_s
+
+
 def _action_ids(record: dict[str, object]) -> set[str]:
     return {
         str(action.get("action_id"))
@@ -967,6 +990,7 @@ def evaluate_index(
     hits = {k: 0 for k in top_ks}
     ious: list[float] = []
     errors: list[float] = []
+    normalized_errors: list[float] = []
     duplicate_rates: list[float] = []
     failures: list[dict[str, object]] = []
     for query, vector in zip(queries, query_vectors, strict=True):
@@ -981,6 +1005,7 @@ def evaluate_index(
             overlap = max((interval_iou(candidate_interval, interval) for interval in query_intervals), default=0.0)
             if shared and overlap > 0:
                 error = min(boundary_error(candidate_interval, interval) for interval in query_intervals)
+                duration = float(query.get("duration_s", query.get("end_s", 0.0)))
                 relevant.append((rank, result, overlap, error))
         for k in top_ks:
             if any(rank <= k for rank, _, _, _ in relevant):
@@ -989,6 +1014,9 @@ def evaluate_index(
             _, best, best_iou, best_error = relevant[0]
             ious.append(best_iou)
             errors.append(best_error)
+            target_duration = float(query.get("duration_s", query.get("end_s", 0.0)))
+            if target_duration > 0:
+                normalized_errors.append(best_error / target_duration)
             spans = [(float(item["start_s"]), float(item["end_s"])) for item in results]
             duplicate_rates.append(sum(interval_iou(spans[0], span) > 0 for span in spans[1:]) / max(1, len(spans) - 1))
         else:
@@ -1001,6 +1029,8 @@ def evaluate_index(
         "temporal_iou_median": float(np.median(ious)) if ious else 0.0,
         "boundary_error_mean_s": float(np.mean(errors)) if errors else None,
         "boundary_error_median_s": float(np.median(errors)) if errors else None,
+        "normalized_boundary_error_mean": float(np.mean(normalized_errors)) if normalized_errors else None,
+        "normalized_boundary_error_median": float(np.median(normalized_errors)) if normalized_errors else None,
         "duplicate_rate_mean": float(np.mean(duplicate_rates)) if duplicate_rates else 0.0,
         "miss_count": len(failures),
         "index_count": len(index.records),
@@ -1015,6 +1045,7 @@ def evaluate_index(
         f"- Mean temporal IoU: {metrics['temporal_iou_mean']:.4f}",
         f"- Median temporal IoU: {metrics['temporal_iou_median']:.4f}",
         f"- Mean boundary error: {metrics['boundary_error_mean_s']:.3f} s" if metrics["boundary_error_mean_s"] is not None else "- Mean boundary error: unavailable",
+        f"- Mean normalized boundary error: {metrics['normalized_boundary_error_mean']:.4f}" if metrics["normalized_boundary_error_mean"] is not None else "- Mean normalized boundary error: unavailable",
         f"- Duplicate rate: {metrics['duplicate_rate_mean']:.4f}",
         f"- Misses: {metrics['miss_count']}",
         "",

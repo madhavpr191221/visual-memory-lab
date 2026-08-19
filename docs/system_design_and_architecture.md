@@ -19,6 +19,11 @@ windows and estimates the event interval. Evidence review shows playable RGB
 frames. Interpretation produces a bounded explanation and states what remains
 uncertain.
 
+The implementation-level Charades contracts, tensor shapes, formulas, and
+reference metrics are maintained in [Charades video memory](charades_video_memory.md).
+This document stays at system-architecture level. Earlier experiments and
+phase-by-phase rationale are preserved in the [documentation archive](archive/README.md).
+
 ## 2. System at a glance
 
 ```mermaid
@@ -51,7 +56,8 @@ flowchart LR
     IDX --> RES
 ```
 
-There is one backend and one set of prepared artifacts. The landing page presents two views of that system:
+There is one backend and one set of prepared artifacts. The landing page presents
+the primary video application, while secondary routes expose research evidence:
 
 - `/app` is the video memory application. It requires a recording before a time-based question can be asked.
 - `/archive/office` keeps the earlier office/image workflows available without placing them in the main user path.
@@ -65,7 +71,8 @@ The current full artifacts contain 18,994 four-second windows, with 14,824
 training windows in the learned index. If that index is unavailable, the API
 falls back to annotation-based lexical search and labels the result honestly.
 
-The guided showcase at `/app/demo` is a presentation layer over the same API. It selects a deterministic office question and two real retrieved views so a reviewer can understand the system in roughly 90 seconds without configuring a query first.
+The guided showcase at `/app/demo` is a presentation layer over the same API.
+The earlier office-image showcase remains available only for historical comparison.
 
 ## 3. Canonical video-memory flow
 
@@ -204,18 +211,18 @@ the same 512-dimensional CLIP space as the stored video-window vectors.
 #### 2. Compare the question with each video window
 
 Each four-second window has a learned temporal vector
-$\mathbf{v}_i$. The temporal encoder combines the eight ordered frame
-embeddings from that window:
+$\mathbf{v}_i$. The temporal encoder combines the sixteen ordered frame
+embeddings from that window in the current reference run:
 
 $$
 \mathbf{v}_i
-= g\left(\mathbf{x}_{i,1},\mathbf{x}_{i,2},\ldots,\mathbf{x}_{i,8}\right).
+= g\left(\mathbf{x}_{i,1},\mathbf{x}_{i,2},\ldots,\mathbf{x}_{i,16}\right).
 $$
 
 Here, $\mathbf{x}_{i,j}$ is the CLIP embedding of frame $j$ in window $i$,
 and $g$ is the small trainable temporal head. It learns how to combine the
 ordered observations into one 512-dimensional representation. The order matters:
-the first frame is earlier in the window than the eighth frame.
+the first frame is earlier in the window than the sixteenth frame.
 
 The current retrieval score is cosine similarity:
 
@@ -236,7 +243,7 @@ Because windows overlap by design, neighbouring results may describe the same
 moment. For two intervals $I_i$ and $I_j$, their temporal overlap is:
 
 $$
-\operatorname{IoU}(I_i,I_j)
+\mathrm{IoU}(I_i,I_j)
 = \frac{|I_i\cap I_j|}{|I_i\cup I_j|}.
 $$
 
@@ -257,7 +264,7 @@ parameters:
 | --- | ---: | --- |
 | Window length | 4 seconds | Each stored video memory covers four seconds. |
 | Window stride | 2 seconds | A new window starts every two seconds, so neighbouring windows overlap. |
-| Frames per window | 8 RGB frames | The temporal encoder receives eight ordered observations. |
+| Frames per window | 16 RGB frames | The temporal encoder receives sixteen ordered observations in the current reference run. |
 | Default result count, $k$ | 8 | The UI displays up to eight candidate moments. |
 | Internal candidate count | $4k$ | The learned search temporarily retrieves more candidates before cleanup. |
 | Maximum results per video | 2 | Prevents one recording from filling the whole result list. |
@@ -357,7 +364,7 @@ flowchart TD
     X[Cross-visit candidate scores]
     J[Optional cached VLM review]
     W[Timestamped Charades windows]
-    F[Eight sampled RGB frames per window]
+    F[Sixteen sampled RGB frames per window]
     TC[CLIP frame cache]
     TH[Trained temporal head]
     VI[Full learned video index]
@@ -551,6 +558,22 @@ data.
 The current video path is deliberately two-stage. First, the learned temporal
 index finds and refines evidence. Second, an optional VLM explains only that
 selected evidence.
+
+The current temporal reference consumes 16 RGB samples per four-second window.
+The VLM review step may sample a smaller set of timestamped frames from the
+selected event; those review frames are evidence for explanation, not additional
+training input. The detailed tensor contract and current metrics are in
+[Charades video memory](charades_video_memory.md).
+
+```mermaid
+flowchart LR
+    Q[Question] --> T[CLIP text vector]
+    T --> R[Exact search over 14,824 train windows]
+    R --> B[Action and boundary scores]
+    B --> G[Group overlapping intervals]
+    G --> E[Original video and timestamped RGB evidence]
+    E --> V[Optional VLM explanation]
+```
 
 ```text
 question

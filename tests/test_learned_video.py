@@ -16,6 +16,7 @@ from visual_memory_lab.learned_video import (
     diversify_video_results,
     group_video_events,
     interval_iou,
+    normalized_boundary_error,
     sample_window_timestamps,
     window_text,
 )
@@ -95,6 +96,7 @@ def test_action_resolver_discards_labels_not_in_vocabulary(tmp_path: Path) -> No
 def test_temporal_metrics_are_interpretable() -> None:
     assert interval_iou((0.0, 4.0), (2.0, 6.0)) == 1 / 3
     assert boundary_error((0.0, 4.0), (1.0, 5.0)) == 1.0
+    assert normalized_boundary_error((0.0, 4.0), (1.0, 5.0), 10.0) == 0.1
 
 
 def test_diversification_removes_overlapping_neighbours() -> None:
