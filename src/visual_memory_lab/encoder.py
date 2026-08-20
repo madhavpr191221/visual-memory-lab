@@ -15,6 +15,23 @@ MODEL_ID = "openai/clip-vit-base-patch32"
 MODEL_REVISION = "3d74acf9a28c67741b2f4f2ea7635f0aaf6f0268"
 
 
+def _load_from_pretrained(loader: object, model_id: str, revision: str) -> object:
+    """Load from the local HF cache first, then use the network if needed.
+
+    A cached model should not make the UI depend on DNS or Hugging Face
+    availability.  The fallback keeps first-time setup convenient.
+    """
+
+    try:
+        return loader.from_pretrained(  # type: ignore[attr-defined]
+            model_id, revision=revision, local_files_only=True
+        )
+    except (OSError, EnvironmentError):
+        return loader.from_pretrained(  # type: ignore[attr-defined]
+            model_id, revision=revision
+        )
+
+
 def resolve_device(requested: str) -> torch.device:
     """Resolve the requested Torch device, preferring CUDA for ``auto``."""
 
@@ -46,13 +63,11 @@ class ClipEncoder:
 
     def __init__(self, device: str = "auto") -> None:
         self.device = resolve_device(device)
-        self.processor = AutoProcessor.from_pretrained(
-            self.model_id,
-            revision=self.model_revision,
+        self.processor = _load_from_pretrained(
+            AutoProcessor, self.model_id, self.model_revision
         )
-        self.model = CLIPModel.from_pretrained(
-            self.model_id,
-            revision=self.model_revision,
+        self.model = _load_from_pretrained(
+            CLIPModel, self.model_id, self.model_revision
         )
         self.model.to(self.device)
         self.model.eval()

@@ -80,9 +80,11 @@ are an honest research baseline, not a production timestamp guarantee.
 
 The Phase 12 frame-refinement implementation is currently on the
 `phase/12-trustworthy-temporal-evidence` branch. Its code and methodology are
-documented, but its full training, refined-index, and held-out evaluation
-artifacts have not yet been generated. The metrics above are Phase 11 baseline
-numbers, not Phase 12 results.
+documented, and its first training, refined-index, and held-out evaluation
+artifacts are now available under `outputs/phase12/frames16/`. The metrics above
+remain the Phase 11 baseline; the first Phase 12 comparison is documented in
+[Charades Video Memory](docs/charades_video_memory.md). It slightly improves
+mean boundary error but does not yet improve retrieval recall or temporal IoU.
 
 ## Run the application
 

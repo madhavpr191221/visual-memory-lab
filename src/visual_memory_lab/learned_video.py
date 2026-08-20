@@ -895,13 +895,34 @@ class LearnedVideoRetriever:
                 # when the external resolver is unavailable.
                 pass
         lexical: list[tuple[float, str]] = []
+        generic_action_terms = {
+            "hold", "holding", "take", "taking", "put", "putting",
+            "open", "opening", "close", "closing", "person", "someone",
+            "happen", "happened", "going", "go", "doing", "time",
+        }
+        distinctive_query_tokens = query_tokens - generic_action_terms
         for label in labels:
             label_tokens = self._tokens(label)
             overlap = len(query_tokens & label_tokens)
+            # Do not let a generic verb such as "holding" map a specific
+            # object query to a different object.  For example, "holding a
+            # cup" must not become the recording's "holding a bag" action.
+            if distinctive_query_tokens and not (
+                distinctive_query_tokens & label_tokens
+            ):
+                overlap = 0
             coverage = overlap / max(1, len(query_tokens))
             lexical.append((coverage, label))
         lexical.sort(reverse=True)
         best_coverage, best_label = lexical[0]
+        if distinctive_query_tokens and not any(
+            distinctive_query_tokens & self._tokens(label) for label in labels
+        ):
+            return set(), {
+                "status": "unsupported",
+                "matched_actions": [],
+                "reason": "the recording has no action with the requested object or distinctive term",
+            }
         # A shared object/action term is enough when it is specific to one label.
         # Otherwise use the learned CLIP text space to bridge synonyms.
         if best_coverage > 0:
