@@ -693,6 +693,182 @@ itself prove that the real-world action is visually unambiguous.
 
 ## 6. Online retrieval and answer flow
 
+## 6A. End-to-end inference: from a question to playable evidence
+
+This section describes what happens when a user opens **Video memory**, chooses
+a prepared recording, and asks a question. The current application does not
+upload and analyse an arbitrary MP4 at request time. It serves prepared
+Charades recordings whose windows, CLIP features, temporal index, and official
+action intervals were built before the UI was started.
+
+### The implemented path
+
+```mermaid
+flowchart TD
+    A[Prepared Charades MP4 and manifest] --> B[API loads catalog and learned index at startup]
+    B --> C[User chooses one recording]
+    C --> D[User asks a natural-language question]
+    D --> E[Normalize wording against actions in that recording]
+    E --> F[Encode question with CLIP text encoder]
+    F --> G[Exact cosine search over learned temporal vectors]
+    G --> H[Action guard and recording filter]
+    H --> I[Phase 12 boundary and frame refinement]
+    I --> J[Group overlapping windows into distinct events]
+    J --> K[Show action interval, context, RGB frames, and playback]
+    K --> L[Optional VLM explanation of selected evidence]
+    L --> M[Follow-up question or saved finding]
+```
+
+The important separation is:
+
+```text
+official annotation interval
+        ≠ retrieved/refined action interval
+        ≠ padded playback context
+```
+
+The application keeps these intervals separate so a user can tell what came
+from the dataset, what the temporal model estimated, and what was added only to
+make the video easier to inspect.
+
+### Worked example: “When did the person hold some medicine?”
+
+Assume the user selects recording `08F85` and sees its summary:
+
+> A person opens a cabinet and takes some medicine down from a shelf.
+
+The user enters:
+
+> When did the person hold some medicine?
+
+The request travels through the following stages:
+
+| Stage | Internal operation | What the user eventually sees |
+| --- | --- | --- |
+| 1. Choose recording | The browser selects `video_id=08F85`. | The query is restricted to one recording. |
+| 2. Normalize wording | The resolver compares the question with actions available in that recording. | `Holding some medicine` becomes the compatible action label. |
+| 3. Encode question | CLIP maps the question into a normalized text vector **q**. | No visible result yet; this is the query representation. |
+| 4. Search windows | The API compares **q** with learned temporal vectors **z**$_i$. | Candidate windows are ranked by similarity. |
+| 5. Apply action guard | Windows must belong to `08F85` and contain the compatible action. | Unrelated cabinet or clothing events are rejected. |
+| 6. Refine time | The temporal boundary and frame heads estimate where inside the window the event is strongest. | A proposed action interval in seconds. |
+| 7. Group overlaps | Neighbouring windows describing the same moment are merged. | One event card instead of several duplicate cards. |
+| 8. Show evidence | The browser loads the original MP4 and sampled RGB frames. | A playable clip, frame timestamps, and interval labels. |
+| 9. Explain optionally | A VLM receives only the selected frames and event metadata. | A readable explanation with visible-support status and limitations. |
+
+The retrieval score is cosine similarity. Since both vectors are normalized,
+
+$$
+s_i = \cos(\mathbf{q},\mathbf{z}_i)
+    = \mathbf{q}^{\mathsf{T}}\mathbf{z}_i,
+\qquad
+\lVert\mathbf{q}\rVert_2=\lVert\mathbf{z}_i\rVert_2=1.
+$$
+
+A high score means that the question and window point in a similar learned
+direction. It is not, by itself, proof that the person held medicine.
+
+### Where the UI gets its “actions”
+
+The current UI has two different views, and they intentionally expose
+different amounts of information.
+
+**Find an event** is the retrieval test. It shows the recording summary and
+hides the action list before the question is asked. After retrieval, the API
+returns:
+
+- `primary_action`: the action selected for the event card;
+- `context_actions`: other annotated actions overlapping the same evidence;
+- `recorded_action`: the official label and official start/end interval;
+- `action_start_s` and `action_end_s`: the interval shown as the action result;
+- `context_start_s` and `context_end_s`: the padded playback interval;
+- `frame_timestamps_s`: sampled evidence timestamps;
+- `interval_source`: whether the result came from the dataset annotation or
+  temporal refinement.
+
+These values originate from the prepared Charades manifest and learned index.
+They are not generated from scratch by the VLM.
+
+**Review the timeline** is the audit view. It displays the official Charades
+action intervals grouped into readable events. Selecting an item in this view
+is not a retrieval experiment; it is direct inspection of the dataset’s timed
+annotations.
+
+### Exact interval handling
+
+Suppose the official annotation says `Holding some medicine` occurs from
+22.0--29.8 seconds. The application may display three related intervals:
+
+| Interval | Meaning |
+| --- | --- |
+| 22.0--29.8 s | Official annotation interval from Charades. |
+| Refined interval | Phase 12 estimate based on the temporal boundary and frame heads. |
+| Context interval | Refined interval plus two seconds on either side, clipped to the video duration. |
+
+For an event interval $I_e=[s,e]$ and recording duration $T$:
+
+$$
+I_c = [\max(0,s-\delta),\min(T,e+\delta)],
+\qquad \delta=2\text{ seconds}.
+$$
+
+The player uses $I_c$ so the reviewer can see what happened immediately before
+and after the proposed event. The event card reports $I_e$, not the full
+context interval, as the system’s best temporal estimate.
+
+### Optional VLM review
+
+The VLM is deliberately downstream of retrieval:
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant API as Video API
+    participant R as Action resolver
+    participant IDX as Temporal index
+    participant MP4 as Original video
+    participant VLM as Optional VLM
+
+    U->>API: Ask question for selected recording
+    API->>R: Match wording to recording actions
+    R-->>API: Compatible action or safe unsupported result
+    API->>IDX: Encode question and rank windows
+    IDX-->>API: Scores, labels, intervals, frame timestamps
+    API->>MP4: Decode selected interval and context
+    MP4-->>API: Playable clip and RGB evidence
+    API-->>U: Candidate event cards
+    U->>VLM: Request explanation for selected event
+    VLM-->>U: Evidence-scoped explanation and limitations
+```
+
+The VLM may describe what is visible in the supplied frames. It may say that
+the object is too small, blurred, occluded, or not visibly confirmed. It cannot
+search the full archive, invent a timestamp, or convert a similar-looking
+event into proof.
+
+### Future arbitrary-video upload flow
+
+An arbitrary upload is a future extension, not the current Charades UI path.
+The intended architecture would be:
+
+```mermaid
+flowchart LR
+    A[Uploaded MP4] --> B[Validate and store temporarily]
+    B --> C[Decode frames and timestamps]
+    C --> D[Build ordered temporal windows]
+    D --> E[Compute frozen CLIP frame embeddings]
+    E --> F[Run temporal representation]
+    F --> G[Propose action intervals]
+    G --> H[Create timestamped event records]
+    H --> I[Show evidence and uncertainty in UI]
+    I --> J[Optional VLM explanation]
+```
+
+The current temporal model cannot invent arbitrary new action names for an
+unknown uploaded video. A future upload system would need a fixed action
+vocabulary, a VLM proposal layer, or an open-vocabulary temporal action model.
+Any proposed action would need to retain its sampled frames, timestamps,
+confidence, and uncertainty rather than being presented as ground truth.
+
 The user-facing path is:
 
 ```text

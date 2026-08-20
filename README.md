@@ -19,6 +19,19 @@ decisions.
 5. Optionally request a VLM explanation.
 6. Confirm, reject, or save the finding.
 
+The detailed inference and UI contract is documented in [Charades Video
+Memory](docs/charades_video_memory.md). In brief, the current application uses
+prepared recordings: it loads the video catalog and learned temporal index,
+maps the question to compatible recorded actions, searches CLIP-based temporal
+vectors, refines the timestamp, groups overlapping windows, and shows playable
+RGB evidence. An optional VLM explains only the selected evidence.
+
+The action list shown by **Review the timeline** comes from official Charades
+annotations. **Find an event** hides those labels before retrieval so the user
+can test whether the system can find the right moment from the summary and
+question alone. Arbitrary uploaded-video inference is a future extension and
+is not currently performed by the UI.
+
 The application is deliberately evidence-first: a similarity score is not
 proof, and an unsupported question returns a safe no-result instead of an
 unrelated event.

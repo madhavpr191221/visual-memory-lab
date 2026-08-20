@@ -555,6 +555,84 @@ data.
 
 ## 15. Learned video retrieval and answer synthesis
 
+### 15A. Full inference pipeline and UI contract
+
+The primary product path starts with a prepared Charades recording. The
+browser does not train a model or rebuild the index when a user asks a
+question. At startup, the API loads the prepared manifest, the frozen-CLIP
+compatible temporal index, and the optional language/VLM services. The user
+then selects a recording and asks a question against that recording.
+
+```text
+prepared Charades MP4 + manifest
+    -> catalog loaded by the API
+    -> user selects one recording
+    -> user enters a question
+    -> wording is mapped to compatible recording actions
+    -> CLIP text embedding
+    -> exact search over learned temporal vectors
+    -> action filtering and temporal refinement
+    -> overlapping windows grouped into events
+    -> playable MP4 interval + timestamped RGB frames
+    -> optional VLM explanation
+    -> follow-up question and SQLite finding
+```
+
+For the question “When did the person hold some medicine?”, the action shown
+after retrieval is normally the official Charades label `Holding some medicine`.
+The label is available because the prepared manifest contains the annotation;
+the VLM is not inventing that label. The learned model ranks and refines the
+evidence window, while the UI keeps the annotation and model estimate visibly
+separate.
+
+The browser’s actions come from three places:
+
+| UI field | Source | Meaning |
+| --- | --- | --- |
+| Recording summary | Charades description | High-level context shown before search. |
+| Timeline actions | Official action intervals | Direct annotation audit view. |
+| Result primary/context actions | Action records attached to retrieved windows | The selected action and overlapping labels. |
+| Refined timestamp | Phase 12 temporal head | Model estimate inside the retrieved window. |
+| VLM explanation | Selected RGB frames only | A bounded visual interpretation, not ground truth. |
+
+The current application therefore answers “where is the evidence for this
+recorded action?” It does not yet answer “what entirely new action occurred in
+an arbitrary uploaded video?” without an additional proposal model.
+
+```mermaid
+flowchart TD
+    V[Prepared recording] --> C[Catalog and summary]
+    C --> Q[User question]
+    Q --> N[Action wording normalization]
+    N --> T[CLIP text vector q]
+    T --> S[Exact cosine search]
+    S --> F[Recording/action filter]
+    F --> R[Boundary and frame refinement]
+    R --> G[Overlap grouping]
+    G --> U[UI event cards]
+    U --> P[Playable context and timestamped frames]
+    P --> X[Optional VLM explanation]
+    X --> H[Follow-up or saved finding]
+```
+
+The future arbitrary-upload extension would add a preparation stage before
+the current search path:
+
+```text
+uploaded video
+    -> validation and temporary storage
+    -> frame decoding with timestamps
+    -> ordered windows
+    -> CLIP frame embeddings
+    -> temporal representation
+    -> action proposal vocabulary/model
+    -> timestamped event records
+    -> current evidence-review UI
+```
+
+That future stage must define how labels are produced. It cannot silently use
+Charades labels as if they were ground truth for a new video.
+
 The current video path is deliberately two-stage. First, the learned temporal
 index finds and refines evidence. Second, an optional VLM explains only that
 selected evidence.
