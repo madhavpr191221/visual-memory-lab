@@ -23,7 +23,7 @@ function Header() {
     <header className={styles.header}>
       <NavLink className={styles.brand} to="/">
         <span className={styles.mark} aria-hidden="true">VM</span>
-        <span><strong>Office Visual Memory</strong><small>Evidence before answers</small></span>
+        <span><strong>Visual Memory Lab</strong><small>Evidence before answers</small></span>
       </NavLink>
       <nav aria-label={research ? "System insights navigation" : "Application navigation"}>
         {research ? <>
