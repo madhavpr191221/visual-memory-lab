@@ -721,3 +721,50 @@ The API returns both the refined interval and the official annotation interval.
 The browser uses a padded context interval only for playback. A ten-second
 player therefore does not imply that the action lasted ten seconds: the
 evidence record states the localized interval and its source separately.
+
+### Phase 13 object-aware inspection card
+
+After a reviewer selects an event, the API can inspect only that event's RGB
+frames. This keeps expensive perception work out of ordinary catalog browsing.
+
+```mermaid
+flowchart TD
+    A[Selected event] --> B[Decode timestamped RGB frames]
+    B --> C[Question and metadata become object prompts]
+    C --> D[Grounding DINO predicts boxes]
+    D --> E[SAM attempts masks]
+    E --> F[Aggregate frame coverage]
+    F --> G[Report objects, boxes, masks, and limitations]
+    G --> H[Optional VLM explanation]
+```
+
+For a question such as “Did someone take medicine from the cabinet?”, the
+prompt set may contain `medicine`, `cabinet`, and `shelf`. Each result keeps the
+frame timestamp, phrase, confidence, normalized box, and whether a mask was
+available. If an object appears in 4 of 6 frames, the UI reports **Partially
+visible**; it does not claim that the object was absent from the other frames.
+
+For an image of width \(W\) and height \(H\), a detector box in pixels is
+converted to the browser coordinate system by
+
+$$
+\mathbf{b}_{norm}=\left[
+\frac{x_1}{W},\frac{y_1}{H},\frac{x_2}{W},\frac{y_2}{H}
+\right].
+$$
+
+The application report keeps four sources separate: the recorded annotation,
+the learned temporal retrieval, the frozen object detector/segmenter, and the
+optional VLM explanation. This makes the result useful for a technician while
+preserving a clear research boundary: a predicted box or mask is visible
+evidence, not a persistent object identity or ground truth.
+
+### Event-synchronized object overlays
+
+The application presents object evidence inside the selected event player. A
+retrieved interval such as (4.0\text{--}8.0\,s) is rendered over a wider
+context clip, while detections are drawn only during the event interval. RGB
+frames are sampled across the interval, and nearby same-label boxes are joined
+with a lightweight IoU association. This gives the user a readable visual
+track without claiming persistent identity. Segmentation masks are optional;
+the interface falls back to detector boxes when masks are unavailable.

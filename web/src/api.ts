@@ -18,6 +18,7 @@ import type {
   VideoSummary,
   VideoFollowUp,
   VideoGroundedAnswer,
+  VideoObjectEvidence,
   VideoFinding,
 } from "./types";
 
@@ -53,6 +54,7 @@ export const api = {
   summarizeVideo: (videoId: string) => request<VideoSummary>("/api/video-memory/summarize", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ video_id: videoId }) }),
   videoFollowUp: (videoId: string, question: string, startS: number, endS: number) => request<VideoFollowUp>("/api/video-memory/follow-up", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ video_id: videoId, question, start_s: startS, end_s: endS }) }),
   synthesizeVideo: (payload: { video_id: string; question: string; event_label: string; start_s: number; end_s: number; evidence_window_ids: string[]; mode: "preview" | "detailed" }) => request<VideoGroundedAnswer>("/api/video-memory/synthesize", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) }),
+  videoObjectEvidence: (payload: { video_id: string; query: string; event_label: string; start_s: number; end_s: number; object_prompts?: string[]; frame_timestamps_s?: number[] }) => request<VideoObjectEvidence>("/api/video-memory/object-evidence", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) }),
   videoFindings: () => request<VideoFinding[]>("/api/video-memory/findings"),
   createVideoFinding: (payload: Omit<VideoFinding, "id" | "created_at">) => request<VideoFinding>("/api/video-memory/findings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) }),
   videoFinding: (id: string) => request<VideoFinding>(`/api/video-memory/findings/${encodeURIComponent(id)}`),

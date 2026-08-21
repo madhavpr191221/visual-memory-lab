@@ -1151,3 +1151,100 @@ boundary and frame labels, and three CUDA epochs. The correct claim is:
 > Phase 12 adds a tested frame-level temporal refinement method. On the first
 > 4,170-query evaluation, it slightly improves boundary error but does not yet
 > improve retrieval recall or temporal IoU.
+
+## 13. Object-aware event inspection
+
+The application layer begins after temporal retrieval. It does not replace the
+temporal index and it does not run object detection over every recording when
+the page loads. The user first selects an event; only then does the API inspect
+a small RGB evidence set for that event.
+
+```mermaid
+flowchart LR
+    A[Selected event interval] --> B[Decode 6-12 RGB frames]
+    B --> C[Build object prompts]
+    C --> D[Grounding DINO boxes]
+    D --> E[SAM masks when available]
+    E --> F[Frame coverage and confidence]
+    F --> G[Inspection report]
+```
+
+For example, for “Did someone take medicine from the cabinet?”, the system
+keeps the retrieved interval and asks the detector about terms such as
+`medicine`, `cabinet`, and `shelf`. A result can say that a container was
+detected in 4 of 6 sampled frames, while the medicine label itself was too
+small to read. That is more useful than silently turning a video-level object
+annotation into a claim about every frame.
+
+Each detection is tied to a timestamp:
+
+```text
+frame timestamp -> predicted phrase -> confidence -> box -> optional mask
+```
+
+The UI groups these records into simple statuses:
+
+- **Supported**: detected in every sampled event frame;
+- **Partially visible**: detected in several, but not all, frames;
+- **Unclear**: appeared only briefly or with weak confidence;
+- **Not visibly confirmed**: no accepted detection was produced.
+
+These statuses describe visible model evidence, not ground truth. In particular,
+
+\[
+\text{no detection} \not\Rightarrow \text{object absent}.
+\]
+
+If an image has width \(W\) and height \(H\), a pixel box
+\([x_1,y_1,x_2,y_2]\) is sent to the browser as normalized coordinates:
+
+\[
+\left[\frac{x_1}{W},\frac{y_1}{H},\frac{x_2}{W},\frac{y_2}{H}\right].
+\]
+
+The browser can therefore draw the prediction over the timestamped evidence
+frame without modifying the original image. When SAM succeeds, the response
+also records a mask score and visible mask fraction; a mask is still a
+predicted visible region, not a persistent object identity.
+
+The final inspection card separates four claims:
+
+1. **Recorded event** — supplied by the Charades annotation.
+2. **Retrieved time** — selected by the CLIP and temporal index.
+3. **Visible object evidence** — produced by the detector and optional mask.
+4. **Explanation** — generated from the selected evidence only.
+
+This separation is the central application boundary. A technician can review a
+useful report while seeing which parts came from a dataset label, a learned
+retrieval model, a frozen perception model, or an optional VLM.
+
+### 13.1 Query-driven object inspection
+
+Object inspection uses the original retrieval question; the user does not
+need to type a second object question. For example:
+
+```text
+Question: Where is the paper bag?
+    -> temporal retrieval selects 10.0-14.0 s
+    -> object inspection targets paper and bag
+    -> boxes/masks are drawn on sampled frames in that interval
+```
+
+Generic event words such as `event`, `relevant`, and `action` are removed from
+the detector prompt. Recording-wide object metadata is not automatically sent
+to the detector, except when a metadata noun directly matches a noun in the
+query. This keeps the report focused on the user's question rather than
+listing every object that might occur somewhere in the recording.
+
+### 13.2 Object overlays in the event player
+
+Selecting a result loads object evidence into the same player that shows the
+retrieved event. The player includes surrounding context, but draws boxes only
+while playback is inside the matched action interval. Retrieval identifies the
+time; the detector describes what is visible at that time.
+
+Detections are sampled across the event and associated with a lightweight
+same-label IoU track. A local track ID is only a visual continuity aid, not a
+claim of persistent object identity. Masks are rendered when segmentation
+returns them; otherwise the box remains the available evidence. Missing boxes
+remain gaps rather than being filled in.

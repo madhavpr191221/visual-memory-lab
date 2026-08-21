@@ -29,6 +29,7 @@ from visual_memory_lab.api_models import (
     InspectionReportRequest,
     InspectionSummaryRequest,
     VideoFollowUpRequest,
+    VideoObjectEvidenceRequest,
     VideoSynthesisRequest,
     VideoFindingCreateRequest,
     VideoSummaryRequest,
@@ -49,6 +50,7 @@ from visual_memory_lab.technician_benchmark import load_questions
 from visual_memory_lab.charades import load_manifest, search_windows
 from visual_memory_lab.learned_video import LearnedVideoIndex, LearnedVideoRetriever, VideoActionResolver, group_video_events
 from visual_memory_lab.video_application import answer_follow_up, context_interval, summarize_video, video_catalog
+from visual_memory_lab.video_object_evidence import VideoObjectEvidence
 
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 ALLOWED_IMAGE_TYPES = {"image/png", "image/jpeg"}
@@ -92,6 +94,7 @@ class AppResources:
     charades_windows: list[dict[str, object]] | None = None
     charades_video: LearnedVideoRetriever | None = None
     video_action_resolver: VideoActionResolver | None = None
+    video_objects: VideoObjectEvidence | None = None
 
 
 def load_resources(config: AppConfig) -> AppResources:
@@ -180,6 +183,7 @@ def load_resources(config: AppConfig) -> AppResources:
         charades_windows=charades_windows,
         charades_video=charades_video,
         video_action_resolver=video_action_resolver,
+        video_objects=VideoObjectEvidence(device=config.device),
     )
 
 
@@ -514,6 +518,75 @@ def create_app(
             return result
         except Exception:
             return fallback
+
+    @app.post("/api/video-memory/object-evidence")
+    def video_memory_object_evidence(request: VideoObjectEvidenceRequest) -> dict[str, object]:
+        """Inspect objects only in the selected event's RGB evidence frames."""
+        windows = current().charades_windows
+        if windows is None:
+            raise HTTPException(status_code=404, detail="Charades temporal memory is not prepared")
+        matching = [item for item in windows if str(item.get("video_id")) == request.video_id]
+        if not matching:
+            raise HTTPException(status_code=404, detail="video not found")
+        duration_s = max(float(item.get("duration_s", item.get("end_s", 0.0))) for item in matching)
+        if request.end_s <= request.start_s:
+            raise HTTPException(status_code=422, detail="end_s must be greater than start_s")
+        end_s = min(request.end_s, duration_s)
+        start_s = min(max(request.start_s, 0.0), end_s)
+        frame_count = min(max(len(request.frame_timestamps_s), 8), 24)
+        try:
+            frames = _sample_video_frames(
+                Path(str(matching[0].get("video_path", ""))).resolve(),
+                start_s,
+                end_s,
+                count=frame_count,
+            )
+        except (OSError, ValueError, RuntimeError) as error:
+            raise HTTPException(status_code=422, detail="could not decode object evidence frames") from error
+        prompts = [str(value).strip(" \t\r\n.,;:!?()[]{}\"'").lower() for value in request.object_prompts]
+        query_terms = {
+            token.strip(".,?!:;()[]{}").lower()
+            for token in request.query.split()
+            if len(token.strip(".,?!:;()[]{}")) >= 4
+        }
+        prompts.extend(
+            str(value)
+            for item in matching
+            for value in str(item.get("objects", "")).split()
+            if any(term in str(value).lower() or str(value).lower() in request.query.lower() for term in query_terms)
+        )
+        stopwords = {
+            "when", "what", "where", "which", "does", "did", "someone", "person",
+            "people", "they", "them", "this", "that", "from", "into", "with", "about",
+            "show", "find", "happen", "happened", "there", "their", "have", "holding",
+            "opening", "closing", "taking", "putting", "some", "the", "and", "near",
+            "relevant", "event", "action", "actions", "visible", "visibility", "eating",
+            "eat", "ate", "someone", "anything", "something",
+        }
+        prompts.extend(
+            token.strip(".,?!:;()[]{}").lower()
+            for token in request.query.split()
+            if len(token.strip(".,?!:;()[]{}")) >= 4
+            and token.strip(".,?!:;()[]{}").lower() not in stopwords
+        )
+        if current().video_objects is None:
+            raise HTTPException(status_code=503, detail="object inspection is unavailable")
+        try:
+            result = current().video_objects.inspect(frames, object_prompts=prompts)
+        finally:
+            for _, _, image in frames:
+                image.close()
+        prompts = sorted({value for value in prompts if value})
+        return {
+            "video_id": request.video_id,
+            "event_label": request.event_label,
+            "query": request.query,
+            "start_s": start_s,
+            "end_s": end_s,
+            "target_objects": sorted(set(prompts)),
+            "prompt_terms": sorted(set(prompts)),
+            **result,
+        }
 
     @app.post("/api/video-memory/findings")
     def create_video_finding(request: VideoFindingCreateRequest) -> dict[str, object]:

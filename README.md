@@ -58,6 +58,12 @@ Expensive model work runs offline. The browser reads prepared artifacts; it
 does not retrain or rebuild an index during normal use. The current detailed
 architecture is in [System Design and Architecture](docs/system_design_and_architecture.md).
 
+After an event is selected, the UI can request an object-evidence pass over
+that event's RGB frames. Grounding DINO predicts object boxes and the SAM
+adapter attempts masks when available. The result reports frame coverage,
+confidence, and limitations beside the evidence. This expensive pass is on
+demand; it does not run over every recording during page load.
+
 ## Public documentation
 
 The project has a deliberately small public reading path:
