@@ -26,6 +26,13 @@ export interface VideoMemoryWindow {
   context_end_s?: number;
   action_start_s?: number;
   action_end_s?: number;
+  annotation_start_s?: number;
+  annotation_end_s?: number;
+  refined_start_s?: number;
+  refined_end_s?: number;
+  refinement_confidence?: number;
+  frame_timestamps_s?: number[];
+  interval_source?: "temporal_refinement" | "dataset_annotation";
   evidence_start_s?: number;
   evidence_end_s?: number;
   score?: number;
@@ -137,6 +144,39 @@ export interface VideoGroundedAnswer {
   model?: string | null;
   cached?: boolean;
   source: string;
+}
+
+export interface VideoObjectEvidence {
+  video_id: string;
+  event_label: string;
+  query: string;
+  target_objects: string[];
+  start_s: number;
+  end_s: number;
+  prompt_terms: string[];
+  status: "detected" | "unavailable";
+  detector?: Record<string, unknown>;
+  frames: {
+    frame_id: string;
+    timestamp_s: number;
+    detections: {
+      label: string;
+      phrase: string;
+      score: number;
+      box_xyxy: number[];
+      box_normalized: number[];
+      mask_available: boolean;
+      track_id?: string;
+    }[];
+  }[];
+  objects: {
+    label: string;
+    frames_visible: number;
+    frame_count: number;
+    max_score: number;
+    status: "supported" | "partially_visible" | "unclear" | "not_visibly_confirmed";
+  }[];
+  limitations: string[];
 }
 
 export interface ZoneSummary {

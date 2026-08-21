@@ -29,6 +29,7 @@ from visual_memory_lab.api_models import (
     InspectionReportRequest,
     InspectionSummaryRequest,
     VideoFollowUpRequest,
+    VideoObjectEvidenceRequest,
     VideoSynthesisRequest,
     VideoFindingCreateRequest,
     VideoSummaryRequest,
@@ -49,6 +50,7 @@ from visual_memory_lab.technician_benchmark import load_questions
 from visual_memory_lab.charades import load_manifest, search_windows
 from visual_memory_lab.learned_video import LearnedVideoIndex, LearnedVideoRetriever, VideoActionResolver, group_video_events
 from visual_memory_lab.video_application import answer_follow_up, context_interval, summarize_video, video_catalog
+from visual_memory_lab.video_object_evidence import VideoObjectEvidence
 
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 ALLOWED_IMAGE_TYPES = {"image/png", "image/jpeg"}
@@ -92,6 +94,7 @@ class AppResources:
     charades_windows: list[dict[str, object]] | None = None
     charades_video: LearnedVideoRetriever | None = None
     video_action_resolver: VideoActionResolver | None = None
+    video_objects: VideoObjectEvidence | None = None
 
 
 def load_resources(config: AppConfig) -> AppResources:
@@ -180,6 +183,7 @@ def load_resources(config: AppConfig) -> AppResources:
         charades_windows=charades_windows,
         charades_video=charades_video,
         video_action_resolver=video_action_resolver,
+        video_objects=VideoObjectEvidence(device=config.device),
     )
 
 
@@ -337,8 +341,18 @@ def create_app(
             }
             # Keep three intervals distinct: the exact annotation, the
             # retrieved/index window, and the padded playback context.
-            result["action_start_s"] = float(result["recorded_action"]["start_s"])
-            result["action_end_s"] = float(result["recorded_action"]["end_s"])
+            result["annotation_start_s"] = float(result["recorded_action"]["start_s"])
+            result["annotation_end_s"] = float(result["recorded_action"]["end_s"])
+            refined_start = result.get("refined_start_s", result.get("predicted_start_s"))
+            refined_end = result.get("refined_end_s", result.get("predicted_end_s"))
+            has_refined_interval = refined_start is not None and refined_end is not None
+            result["action_start_s"] = float(refined_start) if has_refined_interval else result["annotation_start_s"]
+            result["action_end_s"] = float(refined_end) if has_refined_interval else result["annotation_end_s"]
+            result["interval_source"] = "temporal_refinement" if has_refined_interval else "dataset_annotation"
+            if result.get("frame_timestamps_s"):
+                result["frame_timestamps_s"] = [float(value) for value in result["frame_timestamps_s"]]
+            if result.get("refinement_confidence") is not None:
+                result["refinement_confidence"] = float(result["refinement_confidence"])
             result["evidence_start_s"] = float(result.get("context_start_s", result.get("start_s", 0.0)))
             result["evidence_end_s"] = float(result.get("context_end_s", result.get("end_s", 0.0)))
             duration_s = max(
@@ -355,8 +369,13 @@ def create_app(
                 result["recorded_action"]["start_s"],
                 min(float(result["recorded_action"]["end_s"]), duration_s),
             )
-            result["action_start_s"] = result["recorded_action"]["start_s"]
-            result["action_end_s"] = result["recorded_action"]["end_s"]
+            if not has_refined_interval:
+                result["action_start_s"] = result["recorded_action"]["start_s"]
+                result["action_end_s"] = result["recorded_action"]["end_s"]
+            result["action_start_s"] = max(0.0, min(float(result["action_start_s"]), duration_s))
+            result["action_end_s"] = max(
+                result["action_start_s"], min(float(result["action_end_s"]), duration_s)
+            )
             context = context_interval(
                 result["action_start_s"], result["action_end_s"], duration_s, padding_s=2.0
             )
@@ -499,6 +518,75 @@ def create_app(
             return result
         except Exception:
             return fallback
+
+    @app.post("/api/video-memory/object-evidence")
+    def video_memory_object_evidence(request: VideoObjectEvidenceRequest) -> dict[str, object]:
+        """Inspect objects only in the selected event's RGB evidence frames."""
+        windows = current().charades_windows
+        if windows is None:
+            raise HTTPException(status_code=404, detail="Charades temporal memory is not prepared")
+        matching = [item for item in windows if str(item.get("video_id")) == request.video_id]
+        if not matching:
+            raise HTTPException(status_code=404, detail="video not found")
+        duration_s = max(float(item.get("duration_s", item.get("end_s", 0.0))) for item in matching)
+        if request.end_s <= request.start_s:
+            raise HTTPException(status_code=422, detail="end_s must be greater than start_s")
+        end_s = min(request.end_s, duration_s)
+        start_s = min(max(request.start_s, 0.0), end_s)
+        frame_count = min(max(len(request.frame_timestamps_s), 8), 24)
+        try:
+            frames = _sample_video_frames(
+                Path(str(matching[0].get("video_path", ""))).resolve(),
+                start_s,
+                end_s,
+                count=frame_count,
+            )
+        except (OSError, ValueError, RuntimeError) as error:
+            raise HTTPException(status_code=422, detail="could not decode object evidence frames") from error
+        prompts = [str(value).strip(" \t\r\n.,;:!?()[]{}\"'").lower() for value in request.object_prompts]
+        query_terms = {
+            token.strip(".,?!:;()[]{}").lower()
+            for token in request.query.split()
+            if len(token.strip(".,?!:;()[]{}")) >= 4
+        }
+        prompts.extend(
+            str(value)
+            for item in matching
+            for value in str(item.get("objects", "")).split()
+            if any(term in str(value).lower() or str(value).lower() in request.query.lower() for term in query_terms)
+        )
+        stopwords = {
+            "when", "what", "where", "which", "does", "did", "someone", "person",
+            "people", "they", "them", "this", "that", "from", "into", "with", "about",
+            "show", "find", "happen", "happened", "there", "their", "have", "holding",
+            "opening", "closing", "taking", "putting", "some", "the", "and", "near",
+            "relevant", "event", "action", "actions", "visible", "visibility", "eating",
+            "eat", "ate", "someone", "anything", "something",
+        }
+        prompts.extend(
+            token.strip(".,?!:;()[]{}").lower()
+            for token in request.query.split()
+            if len(token.strip(".,?!:;()[]{}")) >= 4
+            and token.strip(".,?!:;()[]{}").lower() not in stopwords
+        )
+        if current().video_objects is None:
+            raise HTTPException(status_code=503, detail="object inspection is unavailable")
+        try:
+            result = current().video_objects.inspect(frames, object_prompts=prompts)
+        finally:
+            for _, _, image in frames:
+                image.close()
+        prompts = sorted({value for value in prompts if value})
+        return {
+            "video_id": request.video_id,
+            "event_label": request.event_label,
+            "query": request.query,
+            "start_s": start_s,
+            "end_s": end_s,
+            "target_objects": sorted(set(prompts)),
+            "prompt_terms": sorted(set(prompts)),
+            **result,
+        }
 
     @app.post("/api/video-memory/findings")
     def create_video_finding(request: VideoFindingCreateRequest) -> dict[str, object]:

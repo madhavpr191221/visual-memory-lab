@@ -19,6 +19,19 @@ decisions.
 5. Optionally request a VLM explanation.
 6. Confirm, reject, or save the finding.
 
+The detailed inference and UI contract is documented in [Charades Video
+Memory](docs/charades_video_memory.md). In brief, the current application uses
+prepared recordings: it loads the video catalog and learned temporal index,
+maps the question to compatible recorded actions, searches CLIP-based temporal
+vectors, refines the timestamp, groups overlapping windows, and shows playable
+RGB evidence. An optional VLM explains only the selected evidence.
+
+The action list shown by **Review the timeline** comes from official Charades
+annotations. **Find an event** hides those labels before retrieval so the user
+can test whether the system can find the right moment from the summary and
+question alone. Arbitrary uploaded-video inference is a future extension and
+is not currently performed by the UI.
+
 The application is deliberately evidence-first: a similarity score is not
 proof, and an unsupported question returns a safe no-result instead of an
 unrelated event.
@@ -44,6 +57,12 @@ FastAPI API → video-memory UI → saved findings
 Expensive model work runs offline. The browser reads prepared artifacts; it
 does not retrain or rebuild an index during normal use. The current detailed
 architecture is in [System Design and Architecture](docs/system_design_and_architecture.md).
+
+After an event is selected, the UI can request an object-evidence pass over
+that event's RGB frames. Grounding DINO predicts object boxes and the SAM
+adapter attempts masks when available. The result reports frame coverage,
+confidence, and limitations beside the evidence. This expensive pass is on
+demand; it does not run over every recording during page load.
 
 ## Public documentation
 
@@ -77,6 +96,14 @@ three-head temporal model, and a held-out test set:
 
 These results show strong top-k retrieval but coarse temporal boundaries. They
 are an honest research baseline, not a production timestamp guarantee.
+
+The Phase 12 frame-refinement implementation is currently on the
+`phase/12-trustworthy-temporal-evidence` branch. Its code and methodology are
+documented, and its first training, refined-index, and held-out evaluation
+artifacts are now available under `outputs/phase12/frames16/`. The metrics above
+remain the Phase 11 baseline; the first Phase 12 comparison is documented in
+[Charades Video Memory](docs/charades_video_memory.md). It slightly improves
+mean boundary error but does not yet improve retrieval recall or temporal IoU.
 
 ## Run the application
 

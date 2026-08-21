@@ -146,6 +146,32 @@
 .frameGrid a { color: var(--ink); text-decoration: none; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
 .frameGrid img { width: 100%; aspect-ratio: 16/9; object-fit: cover; display: block; }
 .frameGrid span { display: block; padding: 7px 9px; font-size: 11px; color: var(--muted); }
+.frameStrip { display: grid; grid-template-columns: repeat(auto-fit, minmax(84px, 1fr)); gap: 6px; padding: 10px 14px; background: var(--surface-2); }
+.frameStrip figure { margin: 0; min-width: 0; }
+.frameStrip img { display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: 6px; }
+.frameStrip figcaption { margin-top: 3px; color: var(--muted); font-size: 10px; text-align: center; }
+.objectEvidence { margin: 16px 0; padding: 14px; background: var(--surface-2); border-radius: 10px; }
+.objectEvidence > small { display: block; color: var(--muted); margin-top: 6px; }
+.overlayPlayer { display: grid; gap: 10px; margin-top: 12px; }
+.overlayStage { position: relative; overflow: hidden; border-radius: 12px; background: #101512; }
+.overlayStage > video { display: block; width: 100%; max-height: 560px; aspect-ratio: 16 / 9; object-fit: contain; }
+.overlayLayer { position: absolute; inset: 0; pointer-events: none; }
+.videoObjectBox { position: absolute; border: 3px solid #f08b2c; border-radius: 5px; box-shadow: 0 0 0 1px rgba(255,255,255,.75); }
+.videoObjectBox b { position: absolute; left: -3px; top: -24px; padding: 4px 7px; border-radius: 5px 5px 5px 0; background: #f08b2c; color: #fff; font-size: 10px; white-space: nowrap; }
+.overlayMeta { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: baseline; color: var(--muted); font-size: 12px; }
+.overlayMeta strong { color: var(--ink); }
+.followUp .overlayPlayer { display: none; }
+.objectSummary { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; margin-top: 10px; }
+.objectSummary > div { padding: 9px; background: var(--surface); border-radius: 8px; }
+.objectSummary strong { display: block; font-size: 14px; margin-bottom: 4px; }
+.objectSummary span { color: var(--muted); font-size: 12px; }
+.objectFrameGrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; margin-top: 12px; }
+.objectFrame { margin: 0; }
+.objectFrame > div { position: relative; }
+.objectFrame img { display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: 7px; }
+.objectFrame svg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.objectFrame rect { fill: rgba(42, 116, 157, .12); stroke: #f0a340; stroke-width: .008; vector-effect: non-scaling-stroke; }
+.objectFrame figcaption { margin-top: 3px; color: var(--muted); font-size: 11px; text-align: center; }
 .compareGrid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 16px 0; }
 .changeFigure { overflow: hidden; margin: 0; }
 .changeFigure img { width: 100%; display: block; background: white; }

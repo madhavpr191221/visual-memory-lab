@@ -96,3 +96,33 @@ The interview answer should be: failure → likely cause → evidence → safe i
 - A missing box or mask is not proof that an object disappeared.
 - Recorded point clouds show visible geometry, not hidden surfaces.
 - A VLM report supports inspection; it does not replace a technician or create ground truth.
+
+## Video-memory UI walkthrough
+
+The primary application is now the prepared-video memory workflow. Open
+`/app/video`, choose a recording, and use **Find an event** when you want the
+system to locate a moment. The page shows the recording summary but hides the
+action list before retrieval, so the question tests the memory system rather
+than revealing the answer.
+
+For example:
+
+```text
+choose recording 08F85
+    -> read its summary
+    -> ask “When did the person hold some medicine?”
+    -> review candidate event cards
+    -> inspect the action interval and separate context interval
+    -> inspect timestamped RGB frames and playable evidence
+    -> ask a follow-up about the selected event
+    -> save the finding with a review status
+```
+
+The **Review the timeline** tab is different: it exposes the official Charades
+action intervals directly for audit. Those action labels come from the dataset
+manifest. The optional VLM is called only after an event is selected and sees
+the supplied evidence frames, not the entire archive.
+
+The current UI uses prepared Charades recordings. Arbitrary uploaded-video
+inference is a future extension described in the system architecture document;
+it is not silently performed by this demo.

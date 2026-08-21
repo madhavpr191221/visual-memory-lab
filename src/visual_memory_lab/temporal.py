@@ -69,7 +69,7 @@ class TemporalWindowEncoder(nn.Module):
 
 
 class ThreeHeadTemporalModel(nn.Module):
-    """Shared temporal encoder with retrieval, action, and boundary heads."""
+    """Shared temporal encoder with window and frame-level evidence heads."""
 
     def __init__(
         self,
@@ -78,21 +78,27 @@ class ThreeHeadTemporalModel(nn.Module):
         *,
         output_dim: int | None = None,
         max_frames: int = 16,
+        hidden_dim: int = 256,
     ) -> None:
         super().__init__()
         if action_count < 1:
             raise ValueError("action_count must be positive")
         output_dim = output_dim or input_dim
-        self.backbone = TemporalWindowEncoder(input_dim, output_dim=output_dim, max_frames=max_frames)
+        self.backbone = TemporalWindowEncoder(input_dim, hidden_dim=hidden_dim, output_dim=output_dim, max_frames=max_frames)
         self.action_head = nn.Linear(output_dim, action_count)
         self.boundary_head = nn.Linear(output_dim, 2)
+        # The backbone sequence stays in ``hidden_dim`` space. These logits
+        # refine a retrieved window without changing the pooled retrieval
+        # vector used by the index.
+        self.frame_refinement_head = nn.Linear(hidden_dim, 3)
 
     def forward(self, frame_embeddings: Tensor, mask: Tensor | None = None) -> dict[str, Tensor]:
-        retrieval, _ = self.backbone.forward_with_sequence(frame_embeddings, mask)
+        retrieval, sequence = self.backbone.forward_with_sequence(frame_embeddings, mask)
         return {
             "retrieval": retrieval,
             "action_logits": self.action_head(retrieval),
             "boundary_logits": self.boundary_head(retrieval),
+            "frame_refinement_logits": self.frame_refinement_head(sequence),
         }
 
 
@@ -102,6 +108,8 @@ def three_head_loss(
     action_targets: Tensor,
     boundary_targets: Tensor,
     boundary_mask: Tensor,
+    frame_targets: Tensor | None = None,
+    frame_mask: Tensor | None = None,
     *,
     action_weight: float = 1.0,
     boundary_weight: float = 1.0,
@@ -116,8 +124,22 @@ def three_head_loss(
         )
     else:
         boundary_loss = outputs["boundary_logits"].sum() * 0.0
-    total = retrieval_loss + action_weight * action_loss + boundary_weight * boundary_loss
-    return total, {"retrieval": retrieval_loss, "action": action_loss, "boundary": boundary_loss}
+    if frame_targets is not None:
+        frame_logits = outputs["frame_refinement_logits"]
+        frame_loss_values = nn.functional.binary_cross_entropy_with_logits(
+            frame_logits,
+            frame_targets,
+            reduction="none",
+        )
+        if frame_mask is not None:
+            frame_loss_values = frame_loss_values * frame_mask.unsqueeze(-1).to(frame_loss_values.dtype)
+            frame_loss = frame_loss_values.sum() / frame_mask.sum().clamp_min(1).to(frame_loss_values.dtype)
+        else:
+            frame_loss = frame_loss_values.mean()
+    else:
+        frame_loss = outputs["frame_refinement_logits"].sum() * 0.0
+    total = retrieval_loss + action_weight * action_loss + boundary_weight * (boundary_loss + frame_loss)
+    return total, {"retrieval": retrieval_loss, "action": action_loss, "boundary": boundary_loss, "frame_refinement": frame_loss}
 
 
 def symmetric_contrastive_loss(

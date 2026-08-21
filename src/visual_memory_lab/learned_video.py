@@ -498,6 +498,8 @@ def train_temporal_from_cache(
     action_targets = torch.zeros((len(records), len(action_names)), dtype=torch.float32)
     boundary_targets = torch.zeros((len(records), 2), dtype=torch.float32)
     boundary_mask = torch.zeros(len(records), dtype=torch.bool)
+    frame_targets = torch.zeros((len(records), frames.shape[1], 3), dtype=torch.float32)
+    frame_mask = torch.ones((len(records), frames.shape[1]), dtype=torch.bool)
     for row_index, record in enumerate(records):
         window_start = float(record.get("start_s", 0.0))
         window_end = float(record.get("end_s", 0.0))
@@ -519,9 +521,22 @@ def train_temporal_from_cache(
                     max(0.0, min(1.0, (action_end - window_start) / window_length)),
                 ])
                 boundary_mask[row_index] = True
+                timestamps = record.get("timestamps_s", [])
+                if isinstance(timestamps, list) and timestamps:
+                    values = np.asarray([float(value) for value in timestamps], dtype=np.float32)
+                    frame_count = min(len(values), frames.shape[1])
+                    values = values[:frame_count]
+                    inside = (values >= action_start) & (values <= action_end)
+                    frame_targets[row_index, :frame_count, 0] = torch.from_numpy(inside.astype(np.float32))
+                    start_index = int(np.argmin(np.abs(values - action_start)))
+                    end_index = int(np.argmin(np.abs(values - action_end)))
+                    frame_targets[row_index, start_index, 1] = 1.0
+                    frame_targets[row_index, end_index, 2] = 1.0
     action_targets = action_targets[selected]
     boundary_targets = boundary_targets[selected]
     boundary_mask = boundary_mask[selected]
+    frame_targets = frame_targets[selected]
+    frame_mask = frame_mask[selected]
     model = ThreeHeadTemporalModel(
         frames.shape[-1],
         len(action_names),
@@ -535,7 +550,7 @@ def train_temporal_from_cache(
         order = torch.randperm(len(frames), generator=generator)
         model.train()
         losses: list[float] = []
-        loss_parts: dict[str, list[float]] = {"retrieval": [], "action": [], "boundary": []}
+        loss_parts: dict[str, list[float]] = {"retrieval": [], "action": [], "boundary": [], "frame_refinement": []}
         for start in range(0, len(order), batch_size):
             indices = order[start : start + batch_size]
             if len(indices) < 2:
@@ -548,6 +563,8 @@ def train_temporal_from_cache(
                 action_targets[indices].to(resolved),
                 boundary_targets[indices].to(resolved),
                 boundary_mask[indices].to(resolved),
+                frame_targets[indices].to(resolved),
+                frame_mask[indices].to(resolved),
                 action_weight=action_weight,
                 boundary_weight=boundary_weight,
             )
@@ -564,12 +581,13 @@ def train_temporal_from_cache(
             f"loss={epoch_summary['loss']:.4f} | "
             f"retrieval={epoch_summary['retrieval_loss']:.4f} | "
             f"action={epoch_summary['action_loss']:.4f} | "
-            f"boundary={epoch_summary['boundary_loss']:.4f}",
+            f"boundary={epoch_summary['boundary_loss']:.4f} | "
+            f"frame={epoch_summary['frame_refinement_loss']:.4f}",
             flush=True,
         )
-    torch.save({"state_dict": model.state_dict(), "input_dim": frames.shape[-1], "output_dim": texts.shape[-1], "max_frames": int(frames.shape[1]), "action_names": action_names, "model_type": "three_head_temporal_v1"}, output / "temporal_multitask.pt")
+    torch.save({"state_dict": model.state_dict(), "input_dim": frames.shape[-1], "output_dim": texts.shape[-1], "max_frames": int(frames.shape[1]), "action_names": action_names, "model_type": "three_head_temporal_v2"}, output / "temporal_multitask.pt")
     (output / "history.jsonl").write_text("".join(json.dumps(item) + "\n" for item in history), encoding="utf-8")
-    summary = {"epochs": epochs, "window_count": len(frames), "split": split, "device": str(resolved), "trainable_parameters": sum(parameter.numel() for parameter in model.parameters()), "action_count": len(action_names), "boundary_labeled_windows": int(boundary_mask.sum()), "action_weight": action_weight, "boundary_weight": boundary_weight, "model_type": "three_head_temporal_v1", "output": str(output.resolve())}
+    summary = {"epochs": epochs, "window_count": len(frames), "split": split, "device": str(resolved), "trainable_parameters": sum(parameter.numel() for parameter in model.parameters()), "action_count": len(action_names), "boundary_labeled_windows": int(boundary_mask.sum()), "frame_refinement_labeled_windows": int(boundary_mask.sum()), "action_weight": action_weight, "boundary_weight": boundary_weight, "model_type": "three_head_temporal_v2", "output": str(output.resolve())}
     (output / "summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
     return summary
 
@@ -599,12 +617,13 @@ def build_index_from_cache(
     head: torch.nn.Module
     if checkpoint is not None:
         payload = torch.load(checkpoint, map_location=resolve_device(device), weights_only=True)
-    if payload is not None and payload.get("model_type") == "three_head_temporal_v1":
+    is_multitask = payload is not None and str(payload.get("model_type", "")).startswith("three_head_temporal_v")
+    if is_multitask:
         head = ThreeHeadTemporalModel(frames.shape[-1], len(payload["action_names"]), output_dim=frames.shape[-1], max_frames=frames.shape[1]).to(resolve_device(device))
     else:
         head = TemporalWindowEncoder(frames.shape[-1], output_dim=frames.shape[-1], max_frames=frames.shape[1]).to(resolve_device(device))
     if payload is not None:
-        head.load_state_dict(payload["state_dict"])
+        head.load_state_dict(payload["state_dict"], strict=False)
     head.eval()
     with torch.inference_mode():
         if isinstance(head, ThreeHeadTemporalModel):
@@ -612,10 +631,12 @@ def build_index_from_cache(
             vectors = outputs["retrieval"].cpu().numpy()
             action_scores = torch.sigmoid(outputs["action_logits"]).cpu().numpy()
             boundary = torch.sigmoid(outputs["boundary_logits"]).cpu().numpy()
+            frame_refinement = torch.sigmoid(outputs["frame_refinement_logits"]).cpu().numpy()
         else:
             vectors = head(frames.to(head.position.device)).cpu().numpy()
             action_scores = None
             boundary = None
+            frame_refinement = None
     if action_scores is not None and payload is not None:
         for index, record in enumerate(records):
             start = float(record.get("start_s", 0.0))
@@ -624,6 +645,25 @@ def build_index_from_cache(
             record["predicted_action_scores"] = {name: round(float(action_scores[index, column]), 5) for column, name in enumerate(payload["action_names"])}
             record["predicted_start_s"] = round(start + float(boundary[index, 0]) * length, 4)
             record["predicted_end_s"] = round(start + float(boundary[index, 1]) * length, 4)
+            if frame_refinement is not None and str(payload.get("model_type", "")).startswith("three_head_temporal_v2"):
+                timestamps = np.asarray(record.get("timestamps_s", []), dtype=np.float32)
+                if timestamps.size == frame_refinement.shape[1]:
+                    relevance = frame_refinement[index, :, 0]
+                    start_scores = frame_refinement[index, :, 1] * (0.25 + 0.75 * relevance)
+                    end_scores = frame_refinement[index, :, 2] * (0.25 + 0.75 * relevance)
+                    refined_start = float(np.sum(timestamps * start_scores) / max(float(start_scores.sum()), 1e-8))
+                    refined_end = float(np.sum(timestamps * end_scores) / max(float(end_scores.sum()), 1e-8))
+                    refined_start = max(start, min(refined_start, end))
+                    refined_end = max(start, min(refined_end, end))
+                    if refined_end <= refined_start:
+                        refined_start = float(record["predicted_start_s"])
+                        refined_end = float(record["predicted_end_s"])
+                    record["refined_start_s"] = round(refined_start, 4)
+                    record["refined_end_s"] = round(refined_end, 4)
+                    record["predicted_start_s"] = record["refined_start_s"]
+                    record["predicted_end_s"] = record["refined_end_s"]
+                    record["refinement_confidence"] = round(float(np.mean(np.maximum.reduce([relevance, start_scores, end_scores]))), 5)
+                    record["frame_timestamps_s"] = [round(float(value), 4) for value in timestamps]
     summary = write_index(vectors, records, output)
     summary["split"] = split
     (output / "summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
@@ -855,13 +895,34 @@ class LearnedVideoRetriever:
                 # when the external resolver is unavailable.
                 pass
         lexical: list[tuple[float, str]] = []
+        generic_action_terms = {
+            "hold", "holding", "take", "taking", "put", "putting",
+            "open", "opening", "close", "closing", "person", "someone",
+            "happen", "happened", "going", "go", "doing", "time",
+        }
+        distinctive_query_tokens = query_tokens - generic_action_terms
         for label in labels:
             label_tokens = self._tokens(label)
             overlap = len(query_tokens & label_tokens)
+            # Do not let a generic verb such as "holding" map a specific
+            # object query to a different object.  For example, "holding a
+            # cup" must not become the recording's "holding a bag" action.
+            if distinctive_query_tokens and not (
+                distinctive_query_tokens & label_tokens
+            ):
+                overlap = 0
             coverage = overlap / max(1, len(query_tokens))
             lexical.append((coverage, label))
         lexical.sort(reverse=True)
         best_coverage, best_label = lexical[0]
+        if distinctive_query_tokens and not any(
+            distinctive_query_tokens & self._tokens(label) for label in labels
+        ):
+            return set(), {
+                "status": "unsupported",
+                "matched_actions": [],
+                "reason": "the recording has no action with the requested object or distinctive term",
+            }
         # A shared object/action term is enough when it is specific to one label.
         # Otherwise use the learned CLIP text space to bridge synonyms.
         if best_coverage > 0:

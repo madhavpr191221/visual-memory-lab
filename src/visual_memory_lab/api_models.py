@@ -113,6 +113,16 @@ class VideoSynthesisRequest(ApiModel):
     mode: Literal["preview", "detailed"] = "preview"
 
 
+class VideoObjectEvidenceRequest(ApiModel):
+    video_id: str = Field(min_length=1, max_length=32)
+    start_s: float = Field(ge=0)
+    end_s: float = Field(gt=0)
+    query: str = Field(min_length=1, max_length=500)
+    event_label: str = Field(default="", max_length=240)
+    object_prompts: list[str] = Field(default_factory=list, max_length=20)
+    frame_timestamps_s: list[float] = Field(default_factory=list, max_length=32)
+
+
 class VideoFindingCreateRequest(ApiModel):
     video_id: str = Field(min_length=1, max_length=32)
     question: str = Field(min_length=1, max_length=500)
