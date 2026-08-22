@@ -33,6 +33,10 @@ export interface VideoMemoryWindow {
   refinement_confidence?: number;
   frame_timestamps_s?: number[];
   interval_source?: "temporal_refinement" | "dataset_annotation";
+  candidate_kind?: "raw_visual_window" | "grouped_visual_moment";
+  grouped_window_count?: number;
+  retrieved_window_start_s?: number;
+  retrieved_window_end_s?: number;
   evidence_start_s?: number;
   evidence_end_s?: number;
   score?: number;
@@ -77,6 +81,7 @@ export interface VideoCatalogItem {
   objects: string[];
   actions?: { action_id: string; name: string; start_s: number; end_s: number }[];
   overlap_groups?: string[][];
+  source?: "charades" | "local_upload";
 }
 
 export interface VideoCatalogResponse { dataset: string; videos: VideoCatalogItem[]; }

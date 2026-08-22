@@ -845,10 +845,11 @@ the object is too small, blurred, occluded, or not visibly confirmed. It cannot
 search the full archive, invent a timestamp, or convert a similar-looking
 event into proof.
 
-### Future arbitrary-video upload flow
+### Local arbitrary-video upload flow
 
-An arbitrary upload is a future extension, not the current Charades UI path.
-The intended architecture would be:
+The local upload path is implemented for private testing. It deliberately uses
+frozen CLIP retrieval rather than pretending that a new video has Charades
+ground-truth action labels:
 
 ```mermaid
 flowchart LR
@@ -856,17 +857,18 @@ flowchart LR
     B --> C[Decode frames and timestamps]
     C --> D[Build ordered temporal windows]
     D --> E[Compute frozen CLIP frame embeddings]
-    E --> F[Run temporal representation]
-    F --> G[Propose action intervals]
-    G --> H[Create timestamped event records]
-    H --> I[Show evidence and uncertainty in UI]
-    I --> J[Optional VLM explanation]
+    E --> F[Mean-pool and normalize each window vector]
+    F --> G[Search with the question vector]
+    G --> H[Group overlapping candidate windows]
+    H --> I[Show playback and uncertainty in UI]
+    I --> J[Optional object boxes or VLM explanation]
 ```
 
 The current temporal model cannot invent arbitrary new action names for an
-unknown uploaded video. A future upload system would need a fixed action
-vocabulary, a VLM proposal layer, or an open-vocabulary temporal action model.
-Any proposed action would need to retain its sampled frames, timestamps,
+unknown uploaded video. Local upload results are therefore called candidate
+moments. A future open-vocabulary action system could add a fixed action
+vocabulary, an LLM/VLM proposal layer, or an open-vocabulary temporal action
+model, but any proposed action would still need its sampled frames, timestamps,
 confidence, and uncertainty rather than being presented as ground truth.
 
 The user-facing path is:

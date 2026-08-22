@@ -57,6 +57,9 @@ export function VideoMemoryPage() {
   const [loading, setLoading] = useState(false);
   const [catalogLoading, setCatalogLoading] = useState(true);
   const [error, setError] = useState("");
+  const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadStatus, setUploadStatus] = useState<{ stage: string; progress: number; message: string; device: string; windows_done: number; windows_total: number } | null>(null);
 
   useEffect(() => {
     api.videoCatalog()
@@ -80,6 +83,29 @@ export function VideoMemoryPage() {
     setVideoId(value);
     resetEvidence();
     setError("");
+  }
+
+  async function uploadVideo(file: File | undefined) {
+    if (!file) return;
+    setUploading(true); setUploadProgress(0); setUploadStatus(null); setError("");
+    try {
+      const uploaded = await api.uploadVideo(file, setUploadProgress);
+      setUploadStatus({ stage: uploaded.stage, progress: uploaded.progress, message: uploaded.message, device: uploaded.device, windows_done: 0, windows_total: 0 });
+      let status = uploaded;
+      while (status.status !== "ready" && status.status !== "failed") {
+        await new Promise((resolve) => window.setTimeout(resolve, 700));
+        status = await api.videoUploadStatus(uploaded.upload_id);
+        setUploadProgress(status.progress);
+        setUploadStatus(status);
+      }
+      if (status.status === "failed") throw new Error(status.error || status.message || "The video could not be prepared.");
+      const refreshed = await api.videoCatalog();
+      setCatalog(refreshed);
+      setVideoId(status.video_id || "");
+      resetEvidence();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Could not process this video locally.");
+    } finally { setUploading(false); setUploadProgress(0); }
   }
 
   async function search(event: FormEvent) {
@@ -196,6 +222,7 @@ export function VideoMemoryPage() {
         </select>
       </label>
       {selectedRecording && <div className={styles.fieldHint}><p><strong>Recording summary:</strong> {selectedRecording.description || "No dataset summary was supplied."}</p><small>Action labels, objects, and exact timestamps are hidden during retrieval so the question tests the memory system rather than the annotation list.</small></div>}
+      <div className={styles.upload}><strong>Try your own video locally</strong><p className={styles.fieldHint}>MP4 only, up to 500 MB. The file stays in this running app and is not uploaded to a service.</p><input aria-label="Upload a private video" type="file" accept="video/mp4,video/quicktime" disabled={uploading} onChange={(event) => void uploadVideo(event.target.files?.[0])} />{uploading && <div className={styles.progressPanel}><progress max="1" value={uploadProgress} /><strong>{uploadStatus?.message || "Uploading your video locally…"}</strong><small>{uploadStatus?.stage === "embedding" && uploadStatus.windows_total ? `Window ${uploadStatus.windows_done} of approximately ${uploadStatus.windows_total} · ` : ""}{uploadStatus?.device ? `Using ${uploadStatus.device === "cuda" ? "GPU" : "CPU"}. ` : ""}Your file stays on this computer.</small></div>}</div>
       <div className={styles.modeRow}>
         <div className={styles.segments} role="tablist" aria-label="Video task">
           <button type="button" className={mode === "find" ? styles.active : ""} onClick={() => setMode("find")}>Find an event</button>
@@ -223,9 +250,10 @@ export function VideoMemoryPage() {
 }
 
 function SearchResults({ result, query, selected, choose, objectEvidence, synthesis, synthesisLoading }: { result: VideoMemoryResponse; query: string; selected: SelectedEvidence | null; choose: (item: SelectedEvidence) => void; objectEvidence: VideoObjectEvidence | null; synthesis: VideoGroundedAnswer | null; synthesisLoading: boolean }) {
+  const isLocal = result.dataset === "local" || result.retrieval_mode?.startsWith("local_");
   return <section className={styles.results} aria-live="polite">
     <div className={`panel ${styles.answerStrip}`}>
-       <div><span className="status strong">Candidate events</span><h2>{result.results.length} possible event{result.results.length === 1 ? "" : "s"}</h2><p>Each card is one distinct moment to review.</p></div>
+       <div><span className="status strong">{isLocal ? "Candidate moments" : "Candidate events"}</span><h2>{result.results.length} candidate {isLocal ? "moment" : "event"}{result.results.length === 1 ? "" : "s"}</h2><p>{isLocal ? "Overlapping visual-retrieval windows are grouped for review. They are not verified event labels." : "Each card is one distinct moment to review."}</p></div>
     </div>
     {synthesisLoading && <div className={`panel ${styles.emptyState}`}><p>Preparing a grounded explanation from the strongest evidence…</p></div>}
     {result.results.length === 0 ? <div className={`panel ${styles.emptyState}`}><h2>No supported event found</h2><p>{result.message || "This recording does not contain a matching event in the available evidence. Try a broader question or review the timeline."}</p></div> : <div className={styles.evidenceGrid}>{result.results.map((item) => {
@@ -236,8 +264,11 @@ function SearchResults({ result, query, selected, choose, objectEvidence, synthe
         const contextStart = item.context_start_s ?? item.start_s;
         const contextEnd = item.context_end_s ?? item.end_s;
          const selection = selectionFromWindow(item, query);
-        return <article className={`panel ${styles.evidenceCard} ${isSelected ? styles.selectedEvidence : ""}`} key={item.event_id ?? item.window_id}>
-        {isSelected && objectEvidence ? <ObjectEvidencePanel evidence={objectEvidence} playback /> : item.video_url && <video controls preload="metadata" src={`${item.video_url}#t=${contextStart},${contextEnd}`} onClick={(event) => event.stopPropagation()} />}
+         const intervalTitle = isLocal ? "Displayed candidate interval" : "Matched action interval";
+         const intervalNote = isLocal ? (item.grouped_window_count && item.grouped_window_count > 1 ? `Grouped from ${item.grouped_window_count} overlapping visual windows.` : "Visual retrieval candidate; not an annotated action.") : (item.recorded_action?.note || "Dataset annotation; not independent visual proof.");
+         return <article className={`panel ${styles.evidenceCard} ${isSelected ? styles.selectedEvidence : ""}`} key={item.event_id ?? item.window_id}>
+         {isLocal && <p className={styles.fieldHint}>{item.grouped_window_count && item.grouped_window_count > 1 ? `This moment combines ${item.grouped_window_count} overlapping visual windows.` : "This is a visual retrieval candidate, not a verified event."}</p>}
+         {isSelected && objectEvidence ? <ObjectEvidencePanel evidence={objectEvidence} playback /> : item.video_url && <video controls preload="metadata" src={`${item.video_url}#t=${contextStart},${contextEnd}`} onClick={(event) => event.stopPropagation()} />}
         {item.frame_timestamps_s?.length ? <FrameStrip videoId={item.video_id} label={label} timestamps={item.frame_timestamps_s} /> : null}
         <div className={styles.evidenceBody}><div className={styles.evidenceTop}><span className={styles.rank}>{item.video_id}</span><span className={styles.score}>Action {actionStart.toFixed(1)}–{actionEnd.toFixed(1)} s</span></div><h3>{label}</h3><div className={styles.evidenceRows}><p><strong>Matched action interval</strong><span>{actionStart.toFixed(1)}–{actionEnd.toFixed(1)} s</span></p><p><strong>Context shown</strong><span>{contextStart.toFixed(1)}–{contextEnd.toFixed(1)} s</span></p><p><strong>Annotation note</strong><span>{item.recorded_action?.note || "Dataset annotation; not independent visual proof."}</span></p><p><strong>Visual review</strong><span>{isSelected && synthesis ? (synthesis.visible_evidence || synthesis.answer) : "Select this event to inspect sampled frames."}</span></p></div>{item.context_actions?.length ? <small><strong>Overlapping context:</strong> {item.context_actions.join(" · ")}</small> : null}{item.objects.length > 0 && <small>Associated objects: {item.objects.join(" · ")}</small>}<button type="button" className={styles.secondary} onClick={() => choose(selection)}>{isSelected ? "Refresh object evidence" : "Inspect event and objects"}</button></div>
       </article>;

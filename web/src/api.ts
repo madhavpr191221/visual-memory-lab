@@ -51,6 +51,15 @@ export const api = {
   guidedDemo: () => request<GuidedDemo>("/api/guided-demo"),
   videoMemory: (query: string, videoId: string) => request<VideoMemoryResponse>(`/api/video-memory?q=${encodeURIComponent(query)}&video_id=${encodeURIComponent(videoId)}`),
   videoCatalog: () => request<VideoCatalogResponse>("/api/video-memory/catalog"),
+  uploadVideo: (file: File, onProgress?: (value: number) => void) => new Promise<{ video_id: string | null; upload_id: string; status: string; progress: number; stage: string; device: string; message: string; windows_done: number; windows_total: number; error?: string }>((resolve, reject) => {
+    const body = new FormData(); body.append("video", file);
+    const xhr = new XMLHttpRequest(); xhr.open("POST", "/api/video-memory/uploads");
+    xhr.upload.onprogress = (event) => { if (event.lengthComputable) onProgress?.(event.loaded / event.total * 0.1); };
+    xhr.onerror = () => reject(new ApiError(0, "The upload connection was interrupted."));
+    xhr.onload = () => { try { const payload = JSON.parse(xhr.responseText) as { detail?: unknown }; if (xhr.status >= 200 && xhr.status < 300) resolve(payload as never); else reject(new ApiError(xhr.status, typeof payload.detail === "string" ? payload.detail : `Request failed (${xhr.status})`)); } catch { reject(new ApiError(xhr.status, "The server returned an unreadable response.")); } };
+    xhr.send(body);
+  }),
+  videoUploadStatus: (uploadId: string) => request<{ video_id: string | null; upload_id: string; status: string; progress: number; stage: string; device: string; duration_s?: number; windows_done: number; windows_total: number; message: string; error?: string }>(`/api/video-memory/uploads/${encodeURIComponent(uploadId)}`),
   summarizeVideo: (videoId: string) => request<VideoSummary>("/api/video-memory/summarize", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ video_id: videoId }) }),
   videoFollowUp: (videoId: string, question: string, startS: number, endS: number) => request<VideoFollowUp>("/api/video-memory/follow-up", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ video_id: videoId, question, start_s: startS, end_s: endS }) }),
   synthesizeVideo: (payload: { video_id: string; question: string; event_label: string; start_s: number; end_s: number; evidence_window_ids: string[]; mode: "preview" | "detailed" }) => request<VideoGroundedAnswer>("/api/video-memory/synthesize", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) }),

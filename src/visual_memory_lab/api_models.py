@@ -96,6 +96,15 @@ class VideoSummaryRequest(ApiModel):
     video_id: str = Field(min_length=1, max_length=32)
 
 
+class VideoUploadStatus(ApiModel):
+    upload_id: str
+    video_id: str
+    status: str
+    progress: float = 1.0
+    duration_s: float | None = None
+    error: str | None = None
+
+
 class VideoFollowUpRequest(ApiModel):
     video_id: str = Field(min_length=1, max_length=32)
     question: str = Field(min_length=1, max_length=500)

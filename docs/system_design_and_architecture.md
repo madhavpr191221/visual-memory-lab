@@ -74,6 +74,65 @@ falls back to annotation-based lexical search and labels the result honestly.
 The guided showcase at `/app/demo` is a presentation layer over the same API.
 The earlier office-image showcase remains available only for historical comparison.
 
+### Local private-video path
+
+Prepared Charades recordings are the research path. A user-provided recording
+uses the same downstream playback and object-evidence contracts but has no
+official action labels:
+
+```mermaid
+flowchart TD
+    A[Choose MP4 in browser] --> B[POST local upload]
+    B --> C[Temporary local session]
+    C --> D[Decode RGB and read duration]
+    D --> E[4-second windows, 2-second stride, 16 frames]
+    E --> F[Frozen CLIP frame embeddings]
+    F --> G[Mean-normalized window vector]
+    G --> H[Cosine search with question]
+    H --> I[Group overlapping windows]
+    I --> J[Candidate interval and context playback]
+    J --> K[On-demand object boxes or masks]
+    K --> L[Optional explicit VLM explanation]
+```
+
+For local video window $u$, the first implementation uses a transparent frozen
+CLIP baseline:
+
+$$
+\mathbf{v}_u = \operatorname{Normalize}\left(\frac{1}{16}
+\sum_{j=1}^{16} \mathbf{x}_{u,j}\right),
+\qquad
+s(u,q)=\mathbf{v}_u^\top\mathbf{q}.
+$$
+
+Here $\mathbf{x}_{u,j}$ is the normalized CLIP embedding for frame $j$ and
+$\mathbf{q}$ is the normalized CLIP text embedding for the question. This
+produces a visual candidate, not a verified action boundary, because a private
+recording has no Charades-style ground truth. The trained temporal head remains
+the research/evaluation path.
+
+The local upload runs as a background job. The UI reports four friendly stages:
+
+```text
+upload file
+    -> check duration and decodability
+    -> build four-second RGB windows
+    -> compute one CLIP vector per window
+    -> finish the local session
+    -> enable search
+```
+
+If raw windows at 0--4 s, 2--6 s, and 4--8 s are retrieved, the API groups
+them into one 0--8 s candidate moment. The representative score is the best
+score among the contributing windows, while their IDs remain attached as
+evidence. This is temporal deduplication for presentation, not a learned event
+detector. Object inspection samples at most 32 timestamps uniformly across a
+grouped moment to keep the detector request bounded.
+
+Uploaded media is stored below `outputs/local-video-sessions/`, ignored by Git,
+and cleaned after its local retention period. The API does not send it to a
+cloud provider automatically; VLM analysis is an explicit separate action.
+
 ## 3. Canonical video-memory flow
 
 ```text

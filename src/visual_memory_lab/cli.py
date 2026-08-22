@@ -331,6 +331,7 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         default=Path("outputs/charades/learned/full/index"),
     )
+    serve.add_argument("--local-video-root", type=Path, default=Path("outputs/local-video-sessions"))
     serve.add_argument("--inspection-db", type=Path, default=Path("outputs/phase8/inspections.sqlite3"))
     serve.add_argument("--device", default="auto")
     serve.add_argument("--host", default="127.0.0.1")
@@ -662,6 +663,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 inspection_db=args.inspection_db,
                 charades_windows=args.charades_windows,
                 charades_learned_index=args.charades_learned_index,
+                local_video_root=args.local_video_root,
             )
         )
         uvicorn.run(app, host=args.host, port=args.port)

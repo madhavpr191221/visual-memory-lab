@@ -29,8 +29,12 @@ RGB evidence. An optional VLM explains only the selected evidence.
 The action list shown by **Review the timeline** comes from official Charades
 annotations. **Find an event** hides those labels before retrieval so the user
 can test whether the system can find the right moment from the summary and
-question alone. Arbitrary uploaded-video inference is a future extension and
-is not currently performed by the UI.
+question alone. Arbitrary uploaded-video inference is available locally
+through **Try your own video locally**. A local MP4 is copied into an
+ephemeral session, split into overlapping RGB windows, embedded with CLIP, and
+searched without requiring Charades annotations. It is not uploaded to a
+hosted service. Because a private recording has no ground truth, the UI labels
+its timestamps as visual candidates rather than verified action intervals.
 
 The application is deliberately evidence-first: a similarity score is not
 proof, and an unsupported question returns a safe no-result instead of an
@@ -137,6 +141,30 @@ The current reference artifact family is under `outputs/phase11/frames16/`:
 - `evaluation` — held-out metrics.
 
 ## Models and boundaries
+
+## Let others try it safely
+
+The safest public workflow is local: each person clones the repository, runs
+the UI, and imports their own MP4. Private videos remain on that machine. A
+small, separately licensed demo clip can be supplied separately from the
+repository; private footage should never be committed to GitHub.
+
+In the UI, choose **Try your own video locally**, select an MP4 (up to 500 MB),
+wait for RGB-window preparation, and then ask a question. The result is a
+CLIP-ranked visual candidate with playable evidence. The upload progress shows
+the current stage (uploading, checking, building visual memory, or finishing),
+the number of four-second windows processed, and whether the GPU or CPU is in
+use. Overlapping windows are grouped into candidate moments so the UI does not
+pretend that several adjacent retrieval windows are separate events. Object
+boxes are run only for the selected moment. Cloud/VLM analysis is a separate
+explicit action.
+
+For example, raw windows at 0--4 s, 2--6 s, and 4--8 s are displayed as one
+0--8 s candidate moment. The grouping improves review ergonomics; it does not
+create an action label or prove the exact event boundaries. Object inspection
+uses at most 32 uniformly spaced timestamps from the selected moment, so a
+long grouped interval remains within the evidence API limit while retaining
+coverage from its beginning to its end.
 
 - CLIP ViT-B/32 supplies frozen image and text representations.
 - A PyTorch temporal encoder learns window-level retrieval, action, and

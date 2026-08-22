@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import io
 import json
+import logging
 import os
+import secrets
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -51,6 +53,9 @@ from visual_memory_lab.charades import load_manifest, search_windows
 from visual_memory_lab.learned_video import LearnedVideoIndex, LearnedVideoRetriever, VideoActionResolver, group_video_events
 from visual_memory_lab.video_application import answer_follow_up, context_interval, summarize_video, video_catalog
 from visual_memory_lab.video_object_evidence import VideoObjectEvidence
+from visual_memory_lab.local_video import LocalVideoManager
+
+logger = logging.getLogger("visual_memory_lab")
 
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 ALLOWED_IMAGE_TYPES = {"image/png", "image/jpeg"}
@@ -79,6 +84,7 @@ class AppConfig:
     # The application index covers every prepared recording. Evaluation keeps
     # using a separate train-only index and held-out test manifest.
     charades_learned_index: Path = Path("outputs/charades/learned/application/index")
+    local_video_root: Path = Path("outputs/local-video-sessions")
 
 
 @dataclass
@@ -95,16 +101,20 @@ class AppResources:
     charades_video: LearnedVideoRetriever | None = None
     video_action_resolver: VideoActionResolver | None = None
     video_objects: VideoObjectEvidence | None = None
+    local_videos: LocalVideoManager | None = None
 
 
 def load_resources(config: AppConfig) -> AppResources:
+    logger.info("Loading prepared memory artifacts")
     memory = NumpyMemoryStore.load(
         config.memory_index, verify_source=config.verify_source
     )
     queries = NumpyMemoryStore.load(
         config.query_index, verify_source=config.verify_source
     )
+    logger.info("Loading CLIP model (requested_device=%s)", config.device)
     encoder = ClipEncoder(device=config.device)
+    logger.info("CLIP model ready (device=%s)", encoder.device)
     service = OfficeMemoryService(
         memory=memory,
         queries=queries,
@@ -171,7 +181,7 @@ def load_resources(config: AppConfig) -> AppResources:
             )
     except (FileNotFoundError, OSError, RuntimeError, ValueError):
         charades_video = None
-    return AppResources(
+    resources = AppResources(
         service=service,
         memory=memory,
         queries=queries,
@@ -184,7 +194,10 @@ def load_resources(config: AppConfig) -> AppResources:
         charades_video=charades_video,
         video_action_resolver=video_action_resolver,
         video_objects=VideoObjectEvidence(device=config.device),
+        local_videos=LocalVideoManager(config.local_video_root, service.encoder),
     )
+    logger.info("Application resources ready (charades=%s, local_video_device=%s)", charades_windows is not None, encoder.device)
+    return resources
 
 
 async def _read_upload(upload: UploadFile) -> Image.Image:
@@ -281,6 +294,27 @@ def create_app(
         top_k: int = Query(default=8, ge=1, le=24),
         video_id: str | None = Query(default=None, min_length=1, max_length=32),
     ) -> dict[str, object]:
+        if video_id and current().local_videos and current().local_videos.get(video_id):
+            if not q.strip():
+                return {"dataset": "local", "window_count": 0, "catalog_window_count": 0, "indexed_window_count": 0, "query": q, "video_id": video_id, "retrieval_mode": "local_clip_window", "support_status": "unsupported", "matched_actions": [], "message": "Ask a question about this local recording.", "results": []}
+            local_results = current().local_videos.search(video_id, q, top_k=top_k)
+            for item in local_results:
+                item["video_url"] = f"/api/video-memory/videos/{video_id}"
+                item["evidence_start_s"] = item["context_start_s"]
+                item["evidence_end_s"] = item["context_end_s"]
+            return {
+                "dataset": "local",
+                "window_count": len(local_results),
+                "catalog_window_count": len(local_results),
+                "indexed_window_count": len(local_results),
+                "query": q,
+                "video_id": video_id,
+                "retrieval_mode": "local_clip_window_grouped",
+                "support_status": "visual_candidate",
+                "matched_actions": [],
+                "message": "Retrieved visually similar candidate moments. This private video has no ground-truth action labels.",
+                "results": local_results,
+            }
         windows = current().charades_windows
         if windows is None:
             raise HTTPException(status_code=404, detail="Charades temporal memory is not prepared")
@@ -412,14 +446,20 @@ def create_app(
     @app.get("/api/video-memory/frame/{video_id}")
     def video_memory_frame(video_id: str, timestamp_s: float = Query(..., ge=0.0)) -> Response:
         """Return one decoded evidence frame without writing a derived file."""
+        local = current().local_videos.get(video_id) if current().local_videos else None
         windows = current().charades_windows
-        if windows is None:
+        if local is not None:
+            matches = local.records
+            path = local.path
+            duration_s = local.duration_s
+        else:
+            matches = [item for item in (windows or []) if str(item.get("video_id")) == video_id]
+            if not matches:
+                raise HTTPException(status_code=404, detail="video not found")
+            path = Path(str(matches[0].get("video_path", ""))).resolve()
+            duration_s = max(float(item.get("duration_s", item.get("end_s", 0.0))) for item in matches)
+        if windows is None and local is None:
             raise HTTPException(status_code=404, detail="Charades temporal memory is not prepared")
-        matches = [item for item in windows if str(item.get("video_id")) == video_id]
-        if not matches:
-            raise HTTPException(status_code=404, detail="video not found")
-        path = Path(str(matches[0].get("video_path", ""))).resolve()
-        duration_s = max(float(item.get("duration_s", item.get("end_s", 0.0))) for item in matches)
         timestamp = min(timestamp_s, max(duration_s - 1e-3, 0.0))
         try:
             frame = _sample_video_frames(path, timestamp, min(duration_s, timestamp + 0.01), count=1)[0][2]
@@ -434,11 +474,72 @@ def create_app(
     def video_memory_catalog() -> dict[str, object]:
         windows = current().charades_windows
         if windows is None:
-            raise HTTPException(status_code=404, detail="Charades temporal memory is not prepared")
-        return {"dataset": "charades", "videos": video_catalog(windows)}
+            catalog = []
+        else:
+            catalog = video_catalog(windows)
+        if current().local_videos:
+            catalog.extend(current().local_videos.catalog())
+        if not catalog:
+            raise HTTPException(status_code=404, detail="No video recordings are prepared")
+        return {"dataset": "charades+local", "videos": catalog}
+
+    @app.post("/api/video-memory/uploads")
+    async def video_memory_upload(video: UploadFile = File(...)) -> dict[str, object]:
+        manager = current().local_videos
+        if manager is None:
+            raise HTTPException(status_code=503, detail="local video import is unavailable")
+        if video.content_type not in {"video/mp4", "video/quicktime", "application/octet-stream"}:
+            raise HTTPException(status_code=415, detail="upload must be an MP4 video")
+        upload_id = f"upload-{secrets.token_hex(8)}"
+        device = str(manager.encoder.device)
+        manager.create_job(upload_id, device=device)
+        logger.info("Local upload received: name=%s device=%s", video.filename or "video.mp4", device)
+        session_dir = manager.root / f"incoming-{secrets.token_hex(8)}"
+        session_dir.mkdir(parents=True, exist_ok=False)
+        source = session_dir / "upload.mp4"
+        total = 0
+        try:
+            with source.open("wb") as handle:
+                while chunk := await video.read(1024 * 1024):
+                    total += len(chunk)
+                    if total > 500 * 1024 * 1024:
+                        raise HTTPException(status_code=413, detail="video must not exceed 500 MB")
+                    handle.write(chunk)
+                    manager.update_job(upload_id, progress=min(0.10, total / (500 * 1024 * 1024) * 0.10), message="Uploading your video locally…")
+            manager.start_import(source, original_name=video.filename or "video.mp4", upload_id=upload_id)
+            return {"upload_id": upload_id, "video_id": None, "status": "processing", "progress": 0.10, "stage": "decoding", "device": device, "message": "Upload complete. Checking the video locally…"}
+        except HTTPException:
+            source.unlink(missing_ok=True); session_dir.rmdir()
+            manager.update_job(upload_id, status="failed", stage="failed", progress=1.0, error="Upload rejected.", message="The video could not be uploaded.")
+            raise
+        except Exception as error:
+            source.unlink(missing_ok=True); session_dir.rmdir()
+            manager.update_job(upload_id, status="failed", stage="failed", progress=1.0, error=str(error), message="The video could not be uploaded.")
+            raise HTTPException(status_code=422, detail=f"could not process video: {error}") from error
+
+    @app.get("/api/video-memory/uploads/{upload_id}")
+    def video_memory_upload_status(upload_id: str) -> dict[str, object]:
+        manager = current().local_videos
+        status = manager.job(upload_id) if manager is not None else None
+        if status is None:
+            raise HTTPException(status_code=404, detail="upload job not found")
+        return status
 
     @app.post("/api/video-memory/summarize")
     def video_memory_summary(request: VideoSummaryRequest) -> dict[str, object]:
+        local = current().local_videos.get(request.video_id) if current().local_videos else None
+        if local is not None:
+            return {
+                "video_id": local.video_id,
+                "video_url": f"/api/video-memory/videos/{local.video_id}",
+                "overview": "A locally uploaded recording. Ask a question to retrieve visually similar moments.",
+                "events": [],
+                "raw_events": [],
+                "objects": [],
+                "source": "local_upload",
+                "vlm_used": False,
+                "limitations": ["No dataset action labels or verified event intervals are available for this upload."],
+            }
         windows = current().charades_windows
         if windows is None:
             raise HTTPException(status_code=404, detail="Charades temporal memory is not prepared")
@@ -451,6 +552,24 @@ def create_app(
     def video_memory_follow_up(request: VideoFollowUpRequest) -> dict[str, object]:
         if request.end_s <= request.start_s:
             raise HTTPException(status_code=422, detail="end_s must be greater than start_s")
+        local = current().local_videos.get(request.video_id) if current().local_videos else None
+        if local is not None:
+            interval = context_interval(request.start_s, request.end_s, local.duration_s, padding_s=0.0)
+            evidence_ids = [
+                str(item.get("window_id", ""))
+                for item in local.records
+                if float(item.get("end_s", 0.0)) > interval["start_s"]
+                and float(item.get("start_s", 0.0)) < interval["end_s"]
+            ]
+            return {
+                "video_id": request.video_id,
+                "question": request.question,
+                "answer": "This local recording has no verified action labels. Review the selected playback and object evidence before drawing a conclusion.",
+                "supported": False,
+                "evidence_window_ids": evidence_ids,
+                "limitations": ["The local path retrieves visual candidates with frozen CLIP; it does not establish event identity or exact boundaries."],
+                "source": "local_visual_retrieval",
+            }
         windows = current().charades_windows
         if windows is None:
             raise HTTPException(status_code=404, detail="Charades temporal memory is not prepared")
@@ -472,6 +591,38 @@ def create_app(
 
     @app.post("/api/video-memory/synthesize")
     def video_memory_synthesize(request: VideoSynthesisRequest) -> dict[str, object]:
+        local = current().local_videos.get(request.video_id) if current().local_videos else None
+        if local is not None:
+            evidence = [
+                item for item in local.records
+                if str(item.get("window_id")) in request.evidence_window_ids
+            ]
+            if not evidence:
+                evidence = [
+                    item for item in local.records
+                    if float(item.get("end_s", 0.0)) > request.start_s
+                    and float(item.get("start_s", 0.0)) < request.end_s
+                ]
+            if not evidence:
+                raise HTTPException(status_code=422, detail="no local evidence windows overlap the selected event")
+            return {
+                "video_id": request.video_id,
+                "event_label": request.event_label,
+                "start_s": request.start_s,
+                "end_s": request.end_s,
+                "answer": "The selected interval is a visually retrieved candidate from a private local video. No annotation or model judgment verifies the named event.",
+                "supported": False,
+                "confidence": "low",
+                "evidence_window_ids": [str(item.get("window_id", "")) for item in evidence],
+                "evidence_citations": [{"observation_id": str(item.get("window_id", "")), "claim": "Retrieved visual candidate window."} for item in evidence],
+                "limitations": ["This local recording has no ground-truth action labels.", "Candidate timestamps come from CLIP similarity and are not verified event boundaries."],
+                "cached": False,
+                "model": None,
+                "source": "local_visual_retrieval",
+                "visible_evidence": "Inspect the playable interval and optional object overlays directly.",
+                "visual_evidence_supported": None,
+                "visual_support_status": "candidate_only",
+            }
         windows = current().charades_windows
         if windows is None:
             raise HTTPException(status_code=404, detail="Charades temporal memory is not prepared")
@@ -522,7 +673,8 @@ def create_app(
     @app.post("/api/video-memory/object-evidence")
     def video_memory_object_evidence(request: VideoObjectEvidenceRequest) -> dict[str, object]:
         """Inspect objects only in the selected event's RGB evidence frames."""
-        windows = current().charades_windows
+        local = current().local_videos.get(request.video_id) if current().local_videos else None
+        windows = local.records if local is not None else current().charades_windows
         if windows is None:
             raise HTTPException(status_code=404, detail="Charades temporal memory is not prepared")
         matching = [item for item in windows if str(item.get("video_id")) == request.video_id]
@@ -590,6 +742,16 @@ def create_app(
 
     @app.post("/api/video-memory/findings")
     def create_video_finding(request: VideoFindingCreateRequest) -> dict[str, object]:
+        local = current().local_videos.get(request.video_id) if current().local_videos else None
+        if local is not None:
+            if request.end_s <= request.start_s:
+                raise HTTPException(status_code=422, detail="end_s must be greater than start_s")
+            if current().inspections is None:
+                raise HTTPException(status_code=503, detail="finding storage is unavailable")
+            payload = request.model_dump(mode="json")
+            payload["source"] = "local_visual_retrieval"
+            payload["limitations"] = list(payload.get("limitations", [])) + ["Local video has no verified annotations; saved finding records review state only."]
+            return current().inspections.create_video_finding(payload)
         windows = current().charades_windows
         if windows is None:
             raise HTTPException(status_code=404, detail="Charades temporal memory is not prepared")
@@ -618,6 +780,9 @@ def create_app(
 
     @app.get("/api/video-memory/videos/{video_id}")
     def video_memory_file(video_id: str) -> FileResponse:
+        local = current().local_videos.get(video_id) if current().local_videos else None
+        if local is not None:
+            return FileResponse(local.path, media_type="video/mp4", filename=local.path.name)
         windows = current().charades_windows
         if windows is None:
             raise HTTPException(status_code=404, detail="Charades temporal memory is not prepared")
